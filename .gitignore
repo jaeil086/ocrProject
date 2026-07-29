@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+.venv/
+venv/
+
+# Environment Variables
+.env
+.env.*
+
+# Editor
+.vscode/
+
+# Node module 
+node_modules/
+.next/
+
+# Kiro
+.kiro/
+
+# Logs
+*.log
+
+# Temporary Files
+temp/
+
+# Test Output
+test_err.txt
+test_output.txt

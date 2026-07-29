@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic
+pandas
+pymupdf
+opencv-python-headless
+boto3
+tenacity
+hypothesis
+pytest
+pytest-asyncio
+httpx
+moto

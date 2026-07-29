@@ -1,0 +1,143 @@
+'use client';
+
+import { useCallback, useState, useRef } from 'react';
+
+interface FileDropzoneProps {
+  onFilesSelected: (files: File[]) => void;
+}
+
+/**
+ * ドラッグ&ドロップ + ファイル選択コンポーネント
+ * PDF形式のみ受け付ける
+ */
+export default function FileDropzone({ onFilesSelected }: FileDropzoneProps) {
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // PDFファイルのみフィルタリングする
+  const filterPdfFiles = useCallback((fileList: FileList | File[]): File[] => {
+    const files = Array.from(fileList);
+    const pdfFiles = files.filter(
+      (file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    );
+
+    if (pdfFiles.length < files.length) {
+      setError('PDF形式のファイルを選択してください');
+    } else {
+      setError(null);
+    }
+
+    return pdfFiles;
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+
+      const pdfFiles = filterPdfFiles(e.dataTransfer.files);
+      if (pdfFiles.length > 0) {
+        onFilesSelected(pdfFiles);
+      }
+    },
+    [filterPdfFiles, onFilesSelected]
+  );
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+        const pdfFiles = filterPdfFiles(e.target.files);
+        if (pdfFiles.length > 0) {
+          onFilesSelected(pdfFiles);
+        }
+      }
+    },
+    [filterPdfFiles, onFilesSelected]
+  );
+
+  const handleClick = useCallback(() => {
+    inputRef.current?.click();
+  }, []);
+
+  return (
+    <div className="w-full">
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={handleClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            handleClick();
+          }
+        }}
+        aria-label="PDFファイルをドラッグ&ドロップまたはクリックして選択"
+        className={`
+          flex flex-col items-center justify-center w-full h-48 
+          border-2 border-dashed rounded-lg cursor-pointer
+          transition-colors duration-200
+          ${
+            isDragOver
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-300 bg-gray-50 hover:border-gray-400 hover:bg-gray-100'
+          }
+        `}
+      >
+        {/* アップロードアイコン */}
+        <svg
+          className={`w-10 h-10 mb-3 ${isDragOver ? 'text-blue-500' : 'text-gray-400'}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+          />
+        </svg>
+        <p className="mb-1 text-sm text-gray-600">
+          <span className="font-semibold">クリックしてファイルを選択</span>
+          　またはドラッグ&ドロップ
+        </p>
+        <p className="text-xs text-gray-500">PDF形式のみ（複数選択可）</p>
+      </div>
+
+      {/* 非表示のファイル入力 */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        multiple
+        onChange={handleFileChange}
+        className="hidden"
+        aria-hidden="true"
+      />
+
+      {/* エラーメッセージ */}
+      {error && (
+        <p className="mt-2 text-sm text-red-600" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
