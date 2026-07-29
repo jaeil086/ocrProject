@@ -129,7 +129,7 @@ export default function ResultPage() {
           </div>
         </div>
 
-        {/* 目視確認チェックリスト（タスク10.3で実装） */}
+        {/* 目視確認チェックリスト */}
         {document.visual_checks.length > 0 && (
           <div className="rounded-lg border border-gray-200 p-4">
             <h3 className="text-sm font-medium text-gray-700 mb-3">目視確認項目</h3>
@@ -142,8 +142,32 @@ export default function ResultPage() {
                   <input
                     type="checkbox"
                     checked={check.is_checked}
-                    readOnly
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                    onChange={async () => {
+                      try {
+                        const { updateVisualCheck } = await import('@/lib/api');
+                        await updateVisualCheck(
+                          fileId,
+                          check.check_item,
+                          !check.is_checked,
+                          '担当者'
+                        );
+                        // ローカル状態を更新
+                        setDocument((prev) => {
+                          if (!prev) return prev;
+                          return {
+                            ...prev,
+                            visual_checks: prev.visual_checks.map((c) =>
+                              c.check_item === check.check_item
+                                ? { ...c, is_checked: !c.is_checked }
+                                : c
+                            ),
+                          };
+                        });
+                      } catch (e) {
+                        console.error('目視確認の更新に失敗:', e);
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 cursor-pointer"
                   />
                   <span className="text-sm text-gray-700">{check.check_item}</span>
                   <span className="text-xs text-gray-400">{check.check_type}</span>
