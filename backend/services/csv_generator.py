@@ -123,8 +123,8 @@ class CsvGenerator:
             # カテゴリ3: 記入内容抽出
             "銀行番号": get_value("銀行番号"),
             "支店番号": get_value("支店番号"),
-            "委託者番号": get_value("委託者番号"),
-            "契約者番号": get_value("契約者番号"),
+            "委託者番号": document.consignor_number or "",
+            "契約者番号": document.contract_number or "",
             # メタ情報
             "ステータス": document.status.value,
             "備考": remarks,

@@ -19,13 +19,14 @@ AWS_REGION: str = "ap-northeast-1"  #Tokyo
 AWS_BEDROCK_SERVICE: str = "bedrock-runtime"
 
 # 東京リージョンInference Profile（SCPで東京・大阪・バージニア以外制限のため 「jp.」 プレフィックスを使用）
-BEDROCK_INFERENCE_PROFILE_ID: str = "jp.anthropic.claude-sonnet-4-5-20250929-v1:0"
+# BEDROCK_INFERENCE_PROFILE_ID: str = "jp.anthropic.claude-sonnet-4-5-20250929-v1:0"
+BEDROCK_INFERENCE_PROFILE_ID: str = "jp.anthropic.claude-sonnet-4-6"
 
 # === ファイルサイズ上限 ===
 MAX_FILE_SIZE_BYTES: int = 50 * 1024 * 1024
 
 # === PDF処理設定 ===
-PDF_RENDER_DPI: int = 300
+PDF_RENDER_DPI: int = 600
 
 # === リトライ設定 ===
 BEDROCK_MAX_RETRIES: int = 3
@@ -33,4 +34,4 @@ BEDROCK_RETRY_MIN_WAIT: int = 2
 BEDROCK_RETRY_MAX_WAIT: int = 15
 
 # === Claude プロンプト設定 ===
-CLAUDE_MAX_TOKENS: int = 4096
+CLAUDE_MAX_TOKENS: int = 8192

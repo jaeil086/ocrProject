@@ -100,9 +100,25 @@ class OcrPipeline:
         field_map = {f.field_name: f.value for f in fields}
         status = DocumentStatus.PROCESSING
 
-        # 委託者番号と契約者番号を別フィールドから取得
-        consignor_number = field_map.get("委託者番号")  # 11137固定
-        contract_number = field_map.get("契約者番号")   # 11137の右隣の数字
+        return OcrDocument(
+            file_id=file_id,
+            original_filename="",
+            form_type=claude_result.form_type,
+            status=status,
+            fields=fields,
+            validation_errors=[],
+            visual_checks=[],
+            consignor_number=field_map.get("委託者番号"),
+            contract_number=field_map.get("契約者番号"),
+            bank_name=None,
+            branch_name=None,
+            bank_code=field_map.get("銀行番号"),
+            branch_code=field_map.get("支店番号"),
+            account_number=field_map.get("口座番号"),
+            depositor_name=field_map.get("預金者名氏名"),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
 
         return OcrDocument(
             file_id=file_id,
