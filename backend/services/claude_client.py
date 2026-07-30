@@ -7,6 +7,40 @@ Claude Sonnet 4.5を「OCR+文書理解エンジン」として利用する。
   Step2: 読み取りテキストからフィールドを構造化抽出
 """
 
+
+
+"""
+!Invoke API
+
+client = boto3.client('bedrock-runtime', region_name='ap-northeast-1')
+response = client.invoke_model( 
+    modelId='anthropic.claude-sonnet-4-5-20250929-v1:0', 
+    body=json.dumps({ 
+            'anthropic_version': 'bedrock-2023-05-31', 
+            'messages': [{ 'role': 'user', 'content': 'Can you explain the features 
+ of Amazon Bedrock?'}], 
+            'max_tokens': 1024 
+    })
+)
+print(json.loads(response['body'].read()))
+
+
+!Converse API
+
+client = boto3.client('bedrock-runtime', region_name='ap-northeast-1')
+response = client.converse( 
+    modelId='anthropic.claude-sonnet-4-5-20250929-v1:0', 
+    messages=[ 
+        { 
+            'role': 'user', 
+            'content': [{'text': 'Can you explain the features of Amazon Bedrock?'}] 
+        } 
+    ]
+)
+print(response)
+"""
+
+
 import base64
 import json
 import logging

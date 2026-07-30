@@ -33,5 +33,5 @@ BEDROCK_MAX_RETRIES: int = 3
 BEDROCK_RETRY_MIN_WAIT: int = 2
 BEDROCK_RETRY_MAX_WAIT: int = 15
 
-# === Claude プロンプト設定 ===
-CLAUDE_MAX_TOKENS: int = 8192
+# === Claude プロンプト設定  / 'max_tokens': 1024  === 
+CLAUDE_MAX_TOKENS: int = 8192  
