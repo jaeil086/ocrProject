@@ -3,8 +3,10 @@ ClaudeClientの単体テスト
 
 モックを使用してAmazon Bedrock Claude APIの呼び出しと
 レスポンスパース処理を検証する。
+2段階OCR方式（Step1: 全テキスト読取、Step2: 構造化抽出）に対応。
 """
 
+import base64
 import io
 import json
 from unittest.mock import MagicMock, patch
@@ -12,295 +14,333 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from backend.models.enums import ConfidenceLevel, FormType
-from backend.models.schemas import ClaudeExtractionResult, TextractLine, TextractResult, TextractWord
+from backend.models.schemas import ClaudeExtractionResult
 from backend.services.claude_client import ClaudeClient
 
 
-@pytest.fixture
-def sample_textract_result() -> TextractResult:
-    """テスト用Textract結果"""
-    return TextractResult(
-        lines=[
-            TextractLine(
-                text="口座振替依頼書",
-                confidence=95.0,
-                words=[TextractWord(text="口座振替依頼書", confidence=95.0, bounding_box={"Left": 0.1, "Top": 0.1, "Width": 0.3, "Height": 0.05})],
-            ),
-            TextractLine(
-                text="みずほ銀行",
-                confidence=88.5,
-                words=[TextractWord(text="みずほ銀行", confidence=88.5, bounding_box={"Left": 0.1, "Top": 0.2, "Width": 0.2, "Height": 0.05})],
-            ),
-            TextractLine(
-                text="東京営業部",
-                confidence=72.3,
-                words=[TextractWord(text="東京営業部", confidence=72.3, bounding_box={"Left": 0.1, "Top": 0.3, "Width": 0.2, "Height": 0.05})],
-            ),
-            TextractLine(
-                text="1234567",
-                confidence=60.0,
-                words=[TextractWord(text="1234567", confidence=60.0, bounding_box={"Left": 0.1, "Top": 0.4, "Width": 0.2, "Height": 0.05})],
-            ),
-        ],
-        forms=[],
-        tables=[],
-    )
+# === ヘルパー関数 ===
 
 
-@pytest.fixture
-def mock_claude_response_general():
-    """一般銀行様式のClaude応答モック"""
-    response_data = {
-        "form_type": "general",
-        "fields": [
-            {"field_name": "銀行名", "value": "みずほ銀行", "confidence_score": 88.5, "needs_review": False},
-            {"field_name": "支店名", "value": "東京営業部", "confidence_score": 72.3, "needs_review": False},
-            {"field_name": "口座番号", "value": "1234567", "confidence_score": 60.0, "needs_review": True},
-            {"field_name": "預金者名（フリガナ）", "value": "ヤマダ タロウ", "confidence_score": 85.0, "needs_review": False},
-            {"field_name": "預金者名（氏名）", "value": "山田 太郎", "confidence_score": 82.0, "needs_review": False},
-        ],
-        "deficiency_notes": ["委託者番号が記入されていません"],
-        "correction_suggestions": {"口座番号": "1234567"},
-    }
-
+def _make_invoke_response(response_dict: dict) -> dict:
+    """invoke_model戻り値のモックを生成"""
     body_content = json.dumps({
         "content": [
-            {"type": "text", "text": json.dumps(response_data, ensure_ascii=False)}
+            {"type": "text", "text": json.dumps(response_dict, ensure_ascii=False)}
         ]
     }).encode("utf-8")
+    return {"body": io.BytesIO(body_content)}
 
-    mock_response = {"body": io.BytesIO(body_content)}
-    return mock_response
+
+def _make_text_response(text: str) -> dict:
+    """テキスト応答のinvoke_model戻り値モックを生成"""
+    body_content = json.dumps({
+        "content": [
+            {"type": "text", "text": text}
+        ]
+    }).encode("utf-8")
+    return {"body": io.BytesIO(body_content)}
+
+
+# === Step2用の標準応答フィクスチャ ===
 
 
 @pytest.fixture
-def mock_claude_response_with_code_block():
-    """コードブロック付きClaude応答モック"""
-    response_json = {
-        "form_type": "yucho",
-        "fields": [
-            {"field_name": "記号", "value": "10100", "confidence_score": 90.0, "needs_review": False},
-            {"field_name": "番号", "value": "12345678", "confidence_score": 75.0, "needs_review": False},
-        ],
-        "deficiency_notes": [],
-        "correction_suggestions": {},
+def step2_response_data():
+    """Step2のStructured Outputs準拠JSON応答データ"""
+    return {
+        "収納代行会社名": {"value": "きらぼしシステム株式会社", "confidence": 92},
+        "預金種目": {"value": "普通", "confidence": 95},
+        "届出印": {"value": "あり", "confidence": 88},
+        "預金者名フリガナ": {"value": "ヤマダ タロウ", "confidence": 85},
+        "預金者名氏名": {"value": "山田 太郎", "confidence": 82},
+        "口座番号": {"value": "1234567", "confidence": 60},
+        "記号番号": {"value": None, "confidence": 50},
+        "銀行番号": {"value": "0137", "confidence": 90},
+        "支店番号": {"value": "209", "confidence": 88},
+        "委託者番号": {"value": "12345", "confidence": 75},
+        "契約者番号": {"value": "67890", "confidence": 72},
     }
 
-    text_with_code_block = f"以下がJSON結果です。\n```json\n{json.dumps(response_json, ensure_ascii=False)}\n```"
 
-    body_content = json.dumps({
-        "content": [
-            {"type": "text", "text": text_with_code_block}
-        ]
-    }).encode("utf-8")
-
-    mock_response = {"body": io.BytesIO(body_content)}
-    return mock_response
+# === TestParseResponse ===
 
 
-class TestBuildPrompt:
-    """_build_promptメソッドのテスト"""
+class TestParseResponse:
+    """_parse_responseメソッドのテスト"""
 
-    def test_build_prompt_includes_ocr_text(self, sample_textract_result):
-        """プロンプトにOCRテキストとConfidence Scoreが含まれる"""
+    def test_parse_structured_output_response(self, step2_response_data):
+        """Structured Outputs準拠のJSON応答を正しくパースする"""
         client = ClaudeClient.__new__(ClaudeClient)
-        prompt = client._build_prompt(sample_textract_result)
-
-        assert "口座振替依頼書" in prompt
-        assert "みずほ銀行" in prompt
-        assert "Confidence: 95.0%" in prompt
-        assert "Confidence: 88.5%" in prompt
-
-    def test_build_prompt_includes_task_instructions(self, sample_textract_result):
-        """プロンプトにタスク指示が含まれる"""
-        client = ClaudeClient.__new__(ClaudeClient)
-        prompt = client._build_prompt(sample_textract_result)
-
-        assert "帳票種別判定" in prompt
-        assert "項目抽出" in prompt
-        assert "JSON構造化" in prompt
-        assert "OCR誤認識補正" in prompt
-        assert "要確認判定" in prompt
-        assert "不備判定" in prompt
-
-    def test_build_prompt_includes_field_definitions(self, sample_textract_result):
-        """プロンプトに抽出フィールド定義が含まれる"""
-        client = ClaudeClient.__new__(ClaudeClient)
-        prompt = client._build_prompt(sample_textract_result)
-
-        assert "銀行名" in prompt
-        assert "支店名" in prompt
-        assert "口座番号" in prompt
-        assert "預金者名（フリガナ）" in prompt
-        assert "委託者番号" in prompt
-
-    def test_build_prompt_includes_confidence_threshold(self, sample_textract_result):
-        """プロンプトにConfidence閾値が含まれる"""
-        client = ClaudeClient.__new__(ClaudeClient)
-        prompt = client._build_prompt(sample_textract_result)
-
-        assert "70.0" in prompt
-
-    def test_build_prompt_includes_forms_when_present(self):
-        """フォーム情報がある場合、プロンプトに含まれる"""
-        textract_result = TextractResult(
-            lines=[TextractLine(text="テスト", confidence=90.0, words=[])],
-            forms=[{"key": "銀行名", "value": "みずほ銀行", "confidence": 92.0}],
-            tables=[],
-        )
-        client = ClaudeClient.__new__(ClaudeClient)
-        prompt = client._build_prompt(textract_result)
-
-        assert "フォーム認識結果" in prompt
-        assert "銀行名: みずほ銀行" in prompt
-
-
-class TestParseClaudeResponse:
-    """_parse_claude_responseメソッドのテスト"""
-
-    def test_parse_general_form_response(self, mock_claude_response_general):
-        """一般銀行様式のClaude応答を正しくパースする"""
-        client = ClaudeClient.__new__(ClaudeClient)
-        result = client._parse_claude_response(mock_claude_response_general)
+        mock_response = _make_invoke_response(step2_response_data)
+        result = client._parse_response(mock_response)
 
         assert isinstance(result, ClaudeExtractionResult)
         assert result.form_type == FormType.GENERAL
-        assert len(result.extracted_fields) == 5
+        assert len(result.extracted_fields) == 11
 
-    def test_parse_confidence_levels(self, mock_claude_response_general):
-        """Confidence Levelが正しく判定される"""
+    def test_parse_confidence_levels(self, step2_response_data):
+        """Confidence Levelが閾値70.0で正しく判定される"""
         client = ClaudeClient.__new__(ClaudeClient)
-        result = client._parse_claude_response(mock_claude_response_general)
+        mock_response = _make_invoke_response(step2_response_data)
+        result = client._parse_response(mock_response)
 
-        # 銀行名: 88.5 >= 70.0 → HIGH
-        bank_field = next(f for f in result.extracted_fields if f.field_name == "銀行名")
-        assert bank_field.confidence_level == ConfidenceLevel.HIGH
+        # 預金種目: 95 >= 70.0 → HIGH
+        deposit_field = next(
+            f for f in result.extracted_fields if f.field_name == "預金種目"
+        )
+        assert deposit_field.confidence_level == ConfidenceLevel.HIGH
+        assert deposit_field.confidence_score == 95.0
 
-        # 口座番号: 60.0 < 70.0 → LOW
-        account_field = next(f for f in result.extracted_fields if f.field_name == "口座番号")
+        # 口座番号: 60 < 70.0 → LOW
+        account_field = next(
+            f for f in result.extracted_fields if f.field_name == "口座番号"
+        )
         assert account_field.confidence_level == ConfidenceLevel.LOW
+        assert account_field.confidence_score == 60.0
 
-    def test_parse_needs_review_fields(self, mock_claude_response_general):
-        """要確認フィールドが正しく抽出される"""
+    def test_parse_needs_review_fields(self, step2_response_data):
+        """LOW confidenceのフィールドがneeds_review_fieldsに含まれる"""
         client = ClaudeClient.__new__(ClaudeClient)
-        result = client._parse_claude_response(mock_claude_response_general)
+        mock_response = _make_invoke_response(step2_response_data)
+        result = client._parse_response(mock_response)
 
+        # confidence < 70 のフィールド: 口座番号(60), 記号番号(50)
         assert "口座番号" in result.needs_review_fields
+        assert "記号番号" in result.needs_review_fields
 
-    def test_parse_deficiency_notes(self, mock_claude_response_general):
-        """不備内容メモが正しく抽出される"""
+    def test_parse_null_values(self, step2_response_data):
+        """null値のフィールドはvalue=Noneとして処理される"""
         client = ClaudeClient.__new__(ClaudeClient)
-        result = client._parse_claude_response(mock_claude_response_general)
+        mock_response = _make_invoke_response(step2_response_data)
+        result = client._parse_response(mock_response)
 
-        assert len(result.deficiency_notes) == 1
-        assert "委託者番号" in result.deficiency_notes[0]
+        symbol_field = next(
+            f for f in result.extracted_fields if f.field_name == "記号番号"
+        )
+        assert symbol_field.value is None
 
-    def test_parse_correction_suggestions(self, mock_claude_response_general):
-        """補正候補が正しく抽出される"""
-        client = ClaudeClient.__new__(ClaudeClient)
-        result = client._parse_claude_response(mock_claude_response_general)
-
-        assert "口座番号" in result.correction_suggestions
-
-    def test_parse_response_with_code_block(self, mock_claude_response_with_code_block):
-        """コードブロック付き応答を正しくパースする"""
-        client = ClaudeClient.__new__(ClaudeClient)
-        result = client._parse_claude_response(mock_claude_response_with_code_block)
-
-        assert result.form_type == FormType.YUCHO
-        assert len(result.extracted_fields) == 2
-        assert result.extracted_fields[0].field_name == "記号"
-        assert result.extracted_fields[0].value == "10100"
-
-    def test_parse_fields_are_not_confirmed(self, mock_claude_response_general):
+    def test_parse_fields_are_not_confirmed(self, step2_response_data):
         """パース結果のフィールドはすべて未確認状態"""
         client = ClaudeClient.__new__(ClaudeClient)
-        result = client._parse_claude_response(mock_claude_response_general)
+        mock_response = _make_invoke_response(step2_response_data)
+        result = client._parse_response(mock_response)
 
         for field in result.extracted_fields:
             assert field.is_confirmed is False
             assert field.corrected_value is None
 
-
-class TestExtractJson:
-    """_extract_jsonメソッドのテスト"""
-
-    def test_extract_json_from_code_block(self):
-        """```json ... ```ブロックからJSONを抽出"""
+    def test_parse_invalid_json_raises_error(self):
+        """不正なJSON応答でValueErrorが発生する"""
         client = ClaudeClient.__new__(ClaudeClient)
-        text = '説明文\n```json\n{"key": "value"}\n```\n追加テキスト'
-        result = client._extract_json(text)
-        assert json.loads(result) == {"key": "value"}
+        mock_response = _make_text_response("これはJSONではありません")
 
-    def test_extract_json_from_plain_block(self):
-        """``` ... ```ブロックからJSONを抽出"""
+        with pytest.raises(ValueError, match="JSONパースに失敗"):
+            client._parse_response(mock_response)
+
+
+# === TestStep1Prompt ===
+
+
+class TestStep1Prompt:
+    """_step1_promptメソッドのテスト"""
+
+    def test_step1_prompt_contains_instructions(self):
+        """Step1プロンプトに読み取り指示が含まれる"""
         client = ClaudeClient.__new__(ClaudeClient)
-        text = '```\n{"key": "value"}\n```'
-        result = client._extract_json(text)
-        assert json.loads(result) == {"key": "value"}
+        prompt = client._step1_prompt()
 
-    def test_extract_json_from_raw_text(self):
-        """生のJSONテキストから抽出"""
+        assert "預金口座振替依頼書" in prompt
+        assert "全ての文字" in prompt
+        assert "書き起こし" in prompt
+
+    def test_step1_prompt_mentions_handwriting(self):
+        """Step1プロンプトに手書き文字への言及がある"""
         client = ClaudeClient.__new__(ClaudeClient)
-        text = '  {"form_type": "general", "fields": []}  '
-        result = client._extract_json(text)
-        parsed = json.loads(result)
-        assert parsed["form_type"] == "general"
+        prompt = client._step1_prompt()
 
-    def test_extract_nested_json(self):
-        """ネストされたJSONを正しく抽出"""
+        assert "手書き" in prompt
+
+
+# === TestStep2Prompt ===
+
+
+class TestStep2Prompt:
+    """_step2_promptメソッドのテスト"""
+
+    def test_step2_prompt_includes_raw_text(self):
+        """Step2プロンプトにStep1のOCRテキストが埋め込まれる"""
         client = ClaudeClient.__new__(ClaudeClient)
-        text = 'Result: {"outer": {"inner": "value"}, "list": [1, 2]}'
-        result = client._extract_json(text)
-        parsed = json.loads(result)
-        assert parsed["outer"]["inner"] == "value"
-        assert parsed["list"] == [1, 2]
+        raw_text = "テスト用OCRテキスト みずほ銀行 東京営業部"
+        prompt = client._step2_prompt(raw_text)
+
+        assert raw_text in prompt
+
+    def test_step2_prompt_includes_field_definitions(self):
+        """Step2プロンプトにフィールド定義が含まれる"""
+        client = ClaudeClient.__new__(ClaudeClient)
+        prompt = client._step2_prompt("テスト")
+
+        assert "収納代行会社名" in prompt
+        assert "預金種目" in prompt
+        assert "届出印" in prompt
+        assert "口座番号" in prompt
+        assert "委託者番号" in prompt
+        assert "契約者番号" in prompt
+
+    def test_step2_prompt_includes_json_format(self):
+        """Step2プロンプトにJSON出力形式の指示が含まれる"""
+        client = ClaudeClient.__new__(ClaudeClient)
+        prompt = client._step2_prompt("テスト")
+
+        assert "JSON" in prompt
+        assert "confidence" in prompt
 
 
-class TestExtractFieldsWithImage:
-    """extract_fields_with_imageメソッドのテスト"""
+# === TestOutputSchema ===
+
+
+class TestOutputSchema:
+    """STEP2_OUTPUT_SCHEMAクラス変数のテスト"""
+
+    def test_schema_is_valid_json_schema(self):
+        """スキーマがJSON Schema形式として有効"""
+        schema = ClaudeClient.STEP2_OUTPUT_SCHEMA
+
+        assert schema["type"] == "object"
+        assert "properties" in schema
+        assert "required" in schema
+        assert schema["additionalProperties"] is False
+
+    def test_schema_has_all_required_fields(self):
+        """スキーマに全11フィールドが定義されている"""
+        schema = ClaudeClient.STEP2_OUTPUT_SCHEMA
+        expected_fields = [
+            "収納代行会社名", "預金種目", "届出印", "預金者名フリガナ",
+            "預金者名氏名", "口座番号", "記号番号", "銀行番号",
+            "支店番号", "委託者番号", "契約者番号",
+        ]
+
+        for field in expected_fields:
+            assert field in schema["properties"]
+            assert field in schema["required"]
+
+    def test_schema_field_structure(self):
+        """各フィールドのスキーマ構造が正しい（value + confidence）"""
+        schema = ClaudeClient.STEP2_OUTPUT_SCHEMA
+
+        for field_name, field_schema in schema["properties"].items():
+            assert field_schema["type"] == "object"
+            assert "value" in field_schema["properties"]
+            assert "confidence" in field_schema["properties"]
+            assert field_schema["properties"]["confidence"]["type"] == "integer"
+            assert field_schema["additionalProperties"] is False
+
+
+# === TestExtractFieldsFromImage（統合テスト） ===
+
+
+class TestExtractFieldsFromImage:
+    """extract_fields_from_imageメソッドのテスト"""
 
     @patch("boto3.client")
-    def test_image_is_base64_encoded_in_request(self, mock_boto3_client, sample_textract_result):
-        """画像がbase64エンコードされてリクエストに含まれる"""
-        # モッククライアントのセットアップ
+    def test_two_step_ocr_invokes_model_twice(self, mock_boto3_client, step2_response_data):
+        """2段階OCRでinvoke_modelが2回呼ばれる（Step1 + Step2）"""
         mock_bedrock = MagicMock()
         mock_boto3_client.return_value = mock_bedrock
 
-        response_data = {
-            "content": [
-                {"type": "text", "text": json.dumps({
-                    "form_type": "general",
-                    "fields": [],
-                    "deficiency_notes": [],
-                    "correction_suggestions": {},
-                }, ensure_ascii=False)}
-            ]
-        }
-        mock_bedrock.invoke_model.return_value = {
-            "body": io.BytesIO(json.dumps(response_data).encode("utf-8"))
-        }
+        # Step1: テキスト応答
+        step1_response = _make_text_response("口座振替依頼書 みずほ銀行 東京営業部")
+        # Step2: JSON応答
+        step2_response = _make_invoke_response(step2_response_data)
+
+        mock_bedrock.invoke_model.side_effect = [step1_response, step2_response]
 
         client = ClaudeClient()
         client.client = mock_bedrock
 
-        # 非同期テスト
         import asyncio
-        image_bytes = b"fake_image_data"
-        result = asyncio.run(client.extract_fields_with_image(sample_textract_result, image_bytes))
+        image_bytes = b"\xff\xd8fake_jpeg_data"
+        result = asyncio.run(client.extract_fields_from_image(image_bytes))
 
-        # invoke_modelが呼ばれたことを確認
-        mock_bedrock.invoke_model.assert_called_once()
-        call_args = mock_bedrock.invoke_model.call_args
-        body = json.loads(call_args[1]["body"])
+        # invoke_modelが2回呼ばれたことを確認
+        assert mock_bedrock.invoke_model.call_count == 2
+        assert isinstance(result, ClaudeExtractionResult)
+        assert len(result.extracted_fields) == 11
 
-        # メッセージにimage contentが含まれることを確認
+    @patch("boto3.client")
+    def test_image_is_base64_encoded(self, mock_boto3_client, step2_response_data):
+        """画像がbase64エンコードされてリクエストに含まれる"""
+        mock_bedrock = MagicMock()
+        mock_boto3_client.return_value = mock_bedrock
+
+        step1_response = _make_text_response("テスト文書")
+        step2_response = _make_invoke_response(step2_response_data)
+        mock_bedrock.invoke_model.side_effect = [step1_response, step2_response]
+
+        client = ClaudeClient()
+        client.client = mock_bedrock
+
+        import asyncio
+        image_bytes = b"\xff\xd8fake_jpeg_data"
+        asyncio.run(client.extract_fields_from_image(image_bytes))
+
+        # Step1のリクエストを検証
+        first_call = mock_bedrock.invoke_model.call_args_list[0]
+        body = json.loads(first_call[1]["body"])
         content = body["messages"][0]["content"]
+
         assert content[0]["type"] == "image"
         assert content[0]["source"]["type"] == "base64"
-        assert content[0]["source"]["media_type"] == "image/png"
+        assert content[0]["source"]["media_type"] == "image/jpeg"
 
-        # base64エンコードの確認
-        import base64
         expected_b64 = base64.b64encode(image_bytes).decode("utf-8")
         assert content[0]["source"]["data"] == expected_b64
+
+    @patch("boto3.client")
+    def test_step2_includes_output_config(self, mock_boto3_client, step2_response_data):
+        """Step2のリクエストにoutput_config（JSON Schema）が含まれる"""
+        mock_bedrock = MagicMock()
+        mock_boto3_client.return_value = mock_bedrock
+
+        step1_response = _make_text_response("テスト文書")
+        step2_response = _make_invoke_response(step2_response_data)
+        mock_bedrock.invoke_model.side_effect = [step1_response, step2_response]
+
+        client = ClaudeClient()
+        client.client = mock_bedrock
+
+        import asyncio
+        image_bytes = b"fake_png_data"
+        asyncio.run(client.extract_fields_from_image(image_bytes))
+
+        # Step2のリクエストを検証
+        second_call = mock_bedrock.invoke_model.call_args_list[1]
+        body = json.loads(second_call[1]["body"])
+
+        # output_configが含まれていることを確認
+        assert "output_config" in body
+        assert body["output_config"]["format"]["type"] == "json_schema"
+        assert body["output_config"]["format"]["schema"] == ClaudeClient.STEP2_OUTPUT_SCHEMA
+
+    @patch("boto3.client")
+    def test_png_media_type_detection(self, mock_boto3_client, step2_response_data):
+        """JPEG以外の画像はPNGとして処理される"""
+        mock_bedrock = MagicMock()
+        mock_boto3_client.return_value = mock_bedrock
+
+        step1_response = _make_text_response("テスト文書")
+        step2_response = _make_invoke_response(step2_response_data)
+        mock_bedrock.invoke_model.side_effect = [step1_response, step2_response]
+
+        client = ClaudeClient()
+        client.client = mock_bedrock
+
+        import asyncio
+        # PNG先頭バイト (0x89 0x50)
+        image_bytes = b"\x89PNGfake_png_data"
+        asyncio.run(client.extract_fields_from_image(image_bytes))
+
+        first_call = mock_bedrock.invoke_model.call_args_list[0]
+        body = json.loads(first_call[1]["body"])
+        content = body["messages"][0]["content"]
+        assert content[0]["source"]["media_type"] == "image/png"

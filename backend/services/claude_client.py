@@ -67,6 +67,119 @@ logger = logging.getLogger(__name__)
 class ClaudeClient:
     """Amazon Bedrock Claude — 2段階OCR方式"""
 
+    # Step2出力のJSONスキーマ定義
+    # Structured Outputsにより、JSON以外の余計なテキストが混ざらなくなる
+    STEP2_OUTPUT_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "収納代行会社名": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "預金種目": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "届出印": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "預金者名フリガナ": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "預金者名氏名": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "口座番号": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "記号番号": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "銀行番号": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "支店番号": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "委託者番号": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "契約者番号": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            }
+        },
+        "required": [
+            "収納代行会社名", "預金種目", "届出印", "預金者名フリガナ",
+            "預金者名氏名", "口座番号", "記号番号", "銀行番号",
+            "支店番号", "委託者番号", "契約者番号"
+        ],
+        "additionalProperties": False
+    }
+
     def __init__(self):
         self.client = boto3.client(
             AWS_BEDROCK_SERVICE, region_name=AWS_REGION
@@ -140,31 +253,47 @@ class ClaudeClient:
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
         media_type = "image/jpeg" if image_bytes[:2] == b'\xff\xd8' else "image/png"
 
+        request_body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": CLAUDE_MAX_TOKENS,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_base64,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": self._step2_prompt(raw_text),
+                        },
+                    ],
+                }
+            ],
+            # Structured Outputs: JSON Schemaを指定し、JSON以外の出力を防止
+            "output_config": {
+                "format": {
+                    "type": "json_schema",
+                    "schema": self.STEP2_OUTPUT_SCHEMA,
+                }
+            },
+        }
+
+        # デバッグログ: output_configが含まれていることを確認
+        logger.info(
+            f"Step2リクエスト: modelId={BEDROCK_INFERENCE_PROFILE_ID}, "
+            f"output_config含む={('output_config' in request_body)}, "
+            f"schema_type={request_body['output_config']['format']['type']}"
+        )
+
         response = self.client.invoke_model(
             modelId=BEDROCK_INFERENCE_PROFILE_ID,
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": CLAUDE_MAX_TOKENS,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": media_type,
-                                    "data": image_base64,
-                                },
-                            },
-                            {
-                                "type": "text",
-                                "text": self._step2_prompt(raw_text),
-                            },
-                        ],
-                    }
-                ],
-            }),
+            body=json.dumps(request_body),
         )
 
         return self._parse_response(response)
@@ -174,8 +303,27 @@ class ClaudeClient:
         return """この画像は日本の「預金口座振替依頼書」です。
 画像内に書かれている全ての文字（印字・手書き・スタンプ含む）を、
 上から下、左から右の順序でそのまま書き起こしてください。
-マス目に1文字ずつ書かれている数字も全て読み取ってください。
-読み取れた文字をそのまま出力してください。"""
+
+【重要な読み取りルール】
+1. マス目に1文字ずつ書かれている数字は、1マスずつ区切って正確に読み取ること。
+   マスの境界線を基準に各セルの中心にある文字を1つずつ認識すること。
+   ※ 必ず左端のマスから右端のマスまで順番通りに読むこと。桁を飛ばしたり入れ替えたりしない。
+2. 手書き文字は見えるままに書き起こすこと。推測で修正・補正しないこと。
+3. フリガナ欄のカタカナは1文字ずつ正確に読み取ること。
+   よくある人名に補正してはいけない。見えるままのカタカナをそのまま返す。
+4. 口座番号・銀行番号（コード）・店番号のマス目は、各マスに1桁ずつ数字が入っている。
+   マス目の線を基準にして、左から右へ1桁ずつ順番に読み取ること。
+5. 手書き数字の判別ルール:
+   - 「0」(ゼロ): 楕円形の閉じた丸い形。内部が空洞。
+   - 「9」(ナイン): 上部に小さい丸、下部に直線が伸びる。
+   - 「6」(ロク): 下部に丸い膨らみ、上部に曲線が伸びる。
+   - 「1」(イチ): 縦の直線のみ。横棒がない。
+   - 「7」(ナナ): 上部に横棒、そこから斜め下に線が伸びる。
+   - 「2」(ニ): 上部にカーブ、底部に横棒。
+   - 上記の特徴を見比べ、マスの中の実際の線の形状で判断すること。
+
+読み取れた文字をそのまま出力してください。
+特に数字マス目は「左から右、1マス=1桁」を厳守してください。"""
 
     def _step2_prompt(self, raw_text: str) -> str:
         """Step2: フィールド抽出プロンプト"""
@@ -184,6 +332,25 @@ class ClaudeClient:
 
 【読み取りテキスト】
 {raw_text}
+
+【最重要ルール — 絶対に守ること】
+★ 数字フィールド（口座番号・銀行番号・支店番号・委託者番号・契約者番号）は
+  必ず画像のマス目を直接確認して1マスずつ読み取ること。
+  読み取りテキスト(Step1結果)と画像が矛盾する場合、画像のマス目を優先すること。
+★ マス目の読み取り手順:
+  (1) マス目の左端を見つける
+  (2) 左から右へ1マスずつ、各マス内の数字を1桁として読む
+  (3) 桁の入れ替え・スキップは絶対にしない
+★ 手書き文字は画像に見えるままを返すこと。推測・補正・修正は一切禁止。
+★ フリガナが不自然な名前に見えても、よくある人名に置き換えてはいけない。
+  例: 画像に「アツフロ」と書いてあれば「アツフロ」と返す。「ヒロキ」等に補正しない。
+★ 手書き数字の判別基準:
+  - 「0」(ゼロ): 楕円形の閉じた形。内部が空洞。上下に開きがない。
+  - 「1」(イチ): 縦の直線のみ。上部にセリフ（短い横棒）がある場合もあるが基本は棒1本。
+  - 「6」(ロク): 下半分に丸い膨らみがある。上部は左に巻く曲線。
+  - 「9」(ナイン): 上半分に丸い膨らみがある。下部に直線が伸びる。
+  - 「0」と「6」: 0は左右対称で完全に閉じている。6は上部が開いており非対称。
+  - 「0」と「9」: 0は上下対称。9は上部が丸く下部が細い線。
 
 【抽出ルール】
 以下の各フィールドについて、実際に認識した文字列をそのまま返してください。
@@ -203,13 +370,19 @@ class ClaudeClient:
 
 4. 預金者名フリガナ:
    「フリガナ」欄に記入されているカタカナ文字列をそのまま返す。空欄なら null。
+   ※ 不自然に見えても補正しない。画像の文字をそのまま返すこと。
+   ※ 1マスに1文字ずつ書かれている場合、左から順番に連結する。
 
 5. 預金者名氏名:
    「氏名」欄に記入されている名前をそのまま返す。法人の場合は法人名・肩書・代表者名を含む。空欄なら null。
+   ※ 手書き文字が読みにくくても、見えるままを返す。推測で修正しない。
 
 6. 口座番号:
    「口座番号」欄（ゆうちょ以外）に記入されている7桁の数字をそのまま返す。
    ※ 口座番号は必ず7桁です。7桁で返してください。空欄なら null。
+   ※ 画像のマス目を左端から右端まで1マスずつ確認すること。
+   ※ Step1テキストと画像が異なる場合、画像を優先。
+   ※ 各マスの数字をそのまま連結する。桁を入れ替えない。
 
 7. 記号番号:
    「※ゆうちょ銀行ご利用の場合」セクションの記号・番号欄に手書き記入された数字。空欄なら null。
@@ -218,6 +391,9 @@ class ClaudeClient:
 8. 銀行番号:
    「※ゆうちょ銀行以外の金融機関ご利用の場合」セクション内、金融機関名の下にある「コード」欄の4桁数字。
    先頭0を省略せず4桁で返す（例: "0137"）。
+   ※ 画像のマス目を左端から右端まで1マスずつ確認すること。
+   ※ Step1テキストと画像が異なる場合、画像を優先。
+   ※ 特に「0」と「1」の混同に注意: 0は丸い楕円、1は縦棒のみ。
 
 9. 支店番号:
    同セクション内、支店名の下にある「店番号」欄の3桁数字。
@@ -235,12 +411,25 @@ class ClaudeClient:
 【出力形式】
 以下のJSON形式のみ出力。説明文は不要。
 各フィールドに confidence (0-100) を付与すること。
+confidenceは「画像から明確に読み取れた確信度」であり、補正後の確信度ではない。
 
 {{"収納代行会社名":{{"value":"","confidence":0}},"預金種目":{{"value":"","confidence":0}},"届出印":{{"value":"","confidence":0}},"預金者名フリガナ":{{"value":"","confidence":0}},"預金者名氏名":{{"value":"","confidence":0}},"口座番号":{{"value":"","confidence":0}},"記号番号":{{"value":"","confidence":0}},"銀行番号":{{"value":"","confidence":0}},"支店番号":{{"value":"","confidence":0}},"委託者番号":{{"value":"","confidence":0}},"契約者番号":{{"value":"","confidence":0}}}}"""
 
     def _parse_response(self, response) -> ClaudeExtractionResult:
-        """Step2の応答をパース"""
+        """
+        Step2の応答をパース
+
+        output_config.json_schema指定により、応答は純粋なJSON文字列のみ。
+        コードブロックや説明文が混ざることはないため、直接json.loadsでパース可能。
+        """
         response_body = json.loads(response["body"].read())
+
+        # デバッグログ: レスポンス原文を出力（画像データ除く）
+        logger.info(
+            f"Step2レスポンス: model={response_body.get('model')}, "
+            f"stop_reason={response_body.get('stop_reason')}, "
+            f"usage={response_body.get('usage')}"
+        )
 
         content = response_body.get("content", [])
         text_response = ""
@@ -249,10 +438,12 @@ class ClaudeClient:
                 text_response = block.get("text", "")
                 break
 
-        json_str = self._extract_json(text_response)
+        # デバッグログ: 応答テキスト（先頭500文字）
+        logger.info(f"Step2応答テキスト（先頭500文字）: {text_response[:500]}")
 
         try:
-            data = json.loads(json_str)
+            # Structured Outputsにより応答は純粋なJSON — 直接パース
+            data = json.loads(text_response)
         except json.JSONDecodeError as e:
             logger.error(f"Step2 JSONパースに失敗: {e}")
             logger.error(f"応答: {text_response[:500]}")
@@ -261,13 +452,8 @@ class ClaudeClient:
         # OcrFieldリスト構築
         extracted_fields = []
         for field_name, field_data in data.items():
-            if isinstance(field_data, dict):
-                value = field_data.get("value")
-                confidence = float(field_data.get("confidence", 90))
-            else:
-                # フラットJSON形式のフォールバック
-                value = field_data
-                confidence = 90.0
+            value = field_data.get("value")
+            confidence = float(field_data.get("confidence", 90))
 
             confidence_level = (
                 ConfidenceLevel.HIGH if confidence >= CONFIDENCE_THRESHOLD
@@ -294,28 +480,3 @@ class ClaudeClient:
             deficiency_notes=[],
             correction_suggestions={},
         )
-
-    def _extract_json(self, text: str) -> str:
-        """テキストからJSON部分を抽出"""
-        if "```json" in text:
-            start = text.index("```json") + len("```json")
-            end = text.index("```", start)
-            return text[start:end].strip()
-
-        if "```" in text:
-            start = text.index("```") + len("```")
-            end = text.index("```", start)
-            return text[start:end].strip()
-
-        start = text.find("{")
-        if start != -1:
-            depth = 0
-            for i in range(start, len(text)):
-                if text[i] == "{":
-                    depth += 1
-                elif text[i] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        return text[start:i + 1]
-
-        return text.strip()

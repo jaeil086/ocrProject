@@ -120,26 +120,6 @@ class OcrPipeline:
             updated_at=datetime.now(),
         )
 
-        return OcrDocument(
-            file_id=file_id,
-            original_filename="",
-            form_type=claude_result.form_type,
-            status=status,
-            fields=fields,
-            validation_errors=[],
-            visual_checks=[],
-            consignor_number=consignor_number,
-            contract_number=contract_number,
-            bank_name=None,
-            branch_name=None,
-            bank_code=field_map.get("銀行番号"),
-            branch_code=field_map.get("支店番号"),
-            account_number=None,
-            depositor_name=None,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        )
-
     def _apply_confidence_level(self, field: OcrField) -> OcrField:
         """ConfidenceLevel判定"""
         confidence_level = (
