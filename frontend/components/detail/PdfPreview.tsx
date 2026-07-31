@@ -17,12 +17,13 @@ export default function PdfPreview({ fileId }: PdfPreviewProps) {
   const [error, setError] = useState(false);
 
   // PDFプレビュー用URL（inline表示エンドポイント）
+  // const pdfUrl = `/api/result/${fileId}/pdf-preview#zoom=120`;
   const pdfUrl = `/api/result/${fileId}/pdf-preview`;
 
   return (
     <div className="flex flex-col h-full">
       <h3 className="text-sm font-medium text-gray-700 mb-2">原本PDFプレビュー</h3>
-      <div className="relative flex-1 min-h-[600px] border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+      <div className="relative flex-1 min-h-[800px] border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
         {/* ローディング表示 */}
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
@@ -61,7 +62,7 @@ export default function PdfPreview({ fileId }: PdfPreviewProps) {
         {/* PDF表示（iframe） */}
         <iframe
           src={pdfUrl}
-          className="w-full h-full min-h-[600px]"
+          className="w-full h-full min-h-[800px]"
           title="原本PDFプレビュー"
           onLoad={() => setLoading(false)}
           onError={() => {

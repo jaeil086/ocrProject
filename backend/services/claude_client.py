@@ -2,9 +2,44 @@
 Amazon Bedrock Claudeクライアント
 
 Claude Sonnet 4.5を「OCR+文書理解エンジン」として利用する。
-PDFから変換した画像を直接Claudeに渡し、口座振替依頼書のフィールドを抽出する。
-Textractは使用しない（MVP構成）。
+2段階OCR方式:
+  Step1: 画像内の全テキストを読み取り
+  Step2: 読み取りテキストからフィールドを構造化抽出
 """
+
+
+
+"""
+!Invoke API
+
+client = boto3.client('bedrock-runtime', region_name='ap-northeast-1')
+response = client.invoke_model( 
+    modelId='anthropic.claude-sonnet-4-5-20250929-v1:0', 
+    body=json.dumps({ 
+            'anthropic_version': 'bedrock-2023-05-31', 
+            'messages': [{ 'role': 'user', 'content': 'Can you explain the features 
+ of Amazon Bedrock?'}], 
+            'max_tokens': 1024 
+    })
+)
+print(json.loads(response['body'].read()))
+
+
+!Converse API
+
+client = boto3.client('bedrock-runtime', region_name='ap-northeast-1')
+response = client.converse( 
+    modelId='anthropic.claude-sonnet-4-5-20250929-v1:0', 
+    messages=[ 
+        { 
+            'role': 'user', 
+            'content': [{'text': 'Can you explain the features of Amazon Bedrock?'}] 
+        } 
+    ]
+)
+print(response)
+"""
+
 
 import base64
 import json
@@ -30,31 +65,38 @@ logger = logging.getLogger(__name__)
 
 
 class ClaudeClient:
-    """Amazon Bedrock Claude — 画像から直接OCR+フィールド抽出"""
+    """Amazon Bedrock Claude — 2段階OCR方式"""
 
     def __init__(self):
         self.client = boto3.client(
             AWS_BEDROCK_SERVICE, region_name=AWS_REGION
         )
 
-    @retry(
-        stop=stop_after_attempt(BEDROCK_MAX_RETRIES),
-        wait=wait_exponential(min=BEDROCK_RETRY_MIN_WAIT, max=BEDROCK_RETRY_MAX_WAIT),
-    )
     async def extract_fields_from_image(
         self, image_bytes: bytes
     ) -> ClaudeExtractionResult:
         """
-        画像から直接フィールドを抽出する（Textract不使用）
-
-        Args:
-            image_bytes: PNG画像バイナリ
-
-        Returns:
-            ClaudeExtractionResult: 抽出結果
+        2段階OCR:
+        Step1: 画像から全テキストを抽出
+        Step2: テキストから構造化フィールドを抽出
         """
-        prompt = self._build_prompt()
+        # Step1: 全テキストOCR
+        raw_text = await self._step1_full_ocr(image_bytes)
+        logger.info(f"Step1 OCR結果（先頭300文字）: {raw_text[:300]}")
+
+        # Step2: テキストからフィールド抽出
+        result = await self._step2_extract_fields(raw_text, image_bytes)
+        return result
+
+    @retry(
+        stop=stop_after_attempt(BEDROCK_MAX_RETRIES),
+        wait=wait_exponential(min=BEDROCK_RETRY_MIN_WAIT, max=BEDROCK_RETRY_MAX_WAIT),
+    )
+    async def _step1_full_ocr(self, image_bytes: bytes) -> str:
+        """Step1: 画像内の全テキストを読み取る"""
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+        # JPEG判定（先頭バイトで判別）
+        media_type = "image/jpeg" if image_bytes[:2] == b'\xff\xd8' else "image/png"
 
         response = self.client.invoke_model(
             modelId=BEDROCK_INFERENCE_PROFILE_ID,
@@ -69,97 +111,135 @@ class ClaudeClient:
                                 "type": "image",
                                 "source": {
                                     "type": "base64",
-                                    "media_type": "image/png",
+                                    "media_type": media_type,
                                     "data": image_base64,
                                 },
                             },
-                            {"type": "text", "text": prompt},
+                            {"type": "text", "text": self._step1_prompt()},
                         ],
                     }
                 ],
             }),
         )
 
-        return self._parse_claude_response(response)
+        response_body = json.loads(response["body"].read())
+        content = response_body.get("content", [])
+        for block in content:
+            if block.get("type") == "text":
+                return block.get("text", "")
+        return ""
 
-    def _build_prompt(self) -> str:
-        """Claude用プロンプト — 3カテゴリチェック体系（fields配列形式）"""
-        return f"""あなたは日本の金融帳票を読み取る専門OCRシステムです。
-この画像は「預金口座振替依頼書（自動払込利用申込書）」です。
+    @retry(
+        stop=stop_after_attempt(BEDROCK_MAX_RETRIES),
+        wait=wait_exponential(min=BEDROCK_RETRY_MIN_WAIT, max=BEDROCK_RETRY_MAX_WAIT),
+    )
+    async def _step2_extract_fields(
+        self, raw_text: str, image_bytes: bytes
+    ) -> ClaudeExtractionResult:
+        """Step2: OCRテキスト+画像からフィールドを構造化抽出"""
+        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+        media_type = "image/jpeg" if image_bytes[:2] == b'\xff\xd8' else "image/png"
 
-以下の3カテゴリのチェック項目について、画像を読み取り結果をJSON形式で出力してください。
+        response = self.client.invoke_model(
+            modelId=BEDROCK_INFERENCE_PROFILE_ID,
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": CLAUDE_MAX_TOKENS,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": image_base64,
+                                },
+                            },
+                            {
+                                "type": "text",
+                                "text": self._step2_prompt(raw_text),
+                            },
+                        ],
+                    }
+                ],
+            }),
+        )
 
-【カテゴリ1: 〇印チェック】
-以下の項目に〇印（丸で囲む）が付いているか確認してください。
+        return self._parse_response(response)
 
-- 収納代行会社名: 帳票上部に「1 きらぼしシステム株式会社」「2 三菱UFJファクター株式会社」の選択肢があり、どちらかに〇印があるか確認。〇があれば選択された会社名をvalueに、なければ"未選択"をvalueに設定。
-- 預金種目: 「1 普通」「2 当座」のどちらかに〇印があるか確認。〇があれば種目名をvalueに、なければ"未選択"をvalueに設定。
-- 届出印: 帳票右側の届出印欄に印鑑（朱肉の印影）が押されているか確認。押されていれば"あり"、なければ"なし"をvalueに設定。
+    def _step1_prompt(self) -> str:
+        """Step1: 全テキスト読み取りプロンプト"""
+        return """この画像は日本の「預金口座振替依頼書」です。
+画像内に書かれている全ての文字（印字・手書き・スタンプ含む）を、
+上から下、左から右の順序でそのまま書き起こしてください。
+マス目に1文字ずつ書かれている数字も全て読み取ってください。
+読み取れた文字をそのまま出力してください。"""
 
-【カテゴリ2: 未入力チェック】
-以下の項目に記入があるかどうかを確認してください。
-記入がある場合はvalueに"記入済"、記入がない場合は"未記入"をvalueに設定。
+    def _step2_prompt(self, raw_text: str) -> str:
+        """Step2: フィールド抽出プロンプト"""
+        return f"""あなたは日本の金融帳票OCRエンジンです。
+下記は画像から読み取ったテキストです。画像も参照しながら、各フィールドの値を抽出してください。
 
-- 預金者名フリガナ: フリガナ欄にカタカナが記入されているか
-- 預金者名氏名: 氏名欄に名前が記入されているか
-- 口座番号: 「※ゆうちょ銀行以外の金融機関ご利用の場合」セクションの口座番号欄に数字が記入されているか
-- 記号番号: 「※ゆうちょ銀行ご利用の場合」セクションの「記号」欄と「番号」欄を確認。
-  ※ この欄に手書きの数字が記入されている場合のみ"記入済"。
-  ※ 印刷されたラベル文字（「記号」「番号」等）や空のマス目だけの場合は"未記入"。
-  ※ 「00100-3-578806」のような加入者番号は別の欄なので混同しないこと。
+【読み取りテキスト】
+{raw_text}
 
-【カテゴリ3: 記入内容の抽出】
+【抽出ルール】
+以下の各フィールドについて、実際に認識した文字列をそのまま返してください。
+「記入済」「未記入」ではなく、読み取った実際の文字・数字を返すこと。
+判別不能の場合のみ null を返してください。
 
-- 銀行番号:
-  「※ゆうちょ銀行以外の金融機関ご利用の場合」セクション内で「コード」「銀行番号」と書かれた欄のマス目に記入された4桁の数字。
-  ※ 必ず4桁で出力してください。先頭が0の場合も0を含めて"0009"のように出力。
-  ※ このマス目は通常、銀行名の下にあります。
+1. 収納代行会社名:
+   帳票上部「収納代行会社名」の横に「1 きらぼしシステム株式会社」「2 三菱UFJファクター株式会社」がある。
+   〇印で選択されている方の会社名を返す。選択なしなら null。
 
-- 支店番号:
-  同セクション内で「店番号」と書かれた欄のマス目に記入された3桁の数字。
-  ※ 必ず3桁で出力してください。先頭が0の場合も0を含めて"003"のように出力。
+2. 預金種目:
+   「預金種目」欄で「1.普通」「2.当座」のどちらに〇印があるか。
+   選択されている種目名を返す。選択なしなら null。
 
-- 委託者番号:
-  帳票下部「収納企業使用欄」の「委託者番号・契約者番号」のマス目を確認。
-  このマス目は途中に太い仕切り線で2つの区画に分かれています。
-  左側の区画（5マス）の数字を読み取ってください。
+3. 届出印:
+   帳票右側「届出印」欄に印影があれば "あり"、なければ "なし"。
 
-- 契約者番号:
-  同じ「委託者番号・契約者番号」のマス目で、太い仕切り線の右側の区画の数字を読み取ってください。
-  ※ 左側区画とは別の数字です。右側区画だけを読んでください。
+4. 預金者名フリガナ:
+   「フリガナ」欄に記入されているカタカナ文字列をそのまま返す。空欄なら null。
 
-【出力フォーマット（JSON）】
-以下のJSONフォーマットのみを出力してください。説明文や補足は不要です。
-```json
-{{{{
-  "form_type": "general",
-  "fields": [
-    {{{{"field_name": "収納代行会社名", "value": "選択された会社名 or 未選択", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "預金種目", "value": "普通 or 当座 or 未選択", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "届出印", "value": "あり or なし", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "預金者名フリガナ", "value": "記入済 or 未記入", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "預金者名氏名", "value": "記入済 or 未記入", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "口座番号", "value": "記入済 or 未記入", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "記号番号", "value": "記入済 or 未記入", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "銀行番号", "value": "4桁の数字（0埋め）例:0009", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "支店番号", "value": "3桁の数字（0埋め）例:681", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "委託者番号", "value": "読み取った数字列", "confidence_score": 90, "needs_review": false}}}},
-    {{{{"field_name": "契約者番号", "value": "読み取った数字列", "confidence_score": 90, "needs_review": false}}}}
-  ],
-  "deficiency_notes": [],
-  "correction_suggestions": {{{{}}}}
-}}}}
-```
+5. 預金者名氏名:
+   「氏名」欄に記入されている名前をそのまま返す。法人の場合は法人名・肩書・代表者名を含む。空欄なら null。
 
-【重要な注意事項】
-- confidence_scoreは読み取りの確信度（鮮明に読める=90-100、やや不鮮明=50-89、ほぼ読めない=0-49）
-- needs_reviewはconfidence_scoreが{CONFIDENCE_THRESHOLD}未満の場合にtrue
-- 銀行番号は必ず4桁、支店番号は必ず3桁で、先頭の0を省略しないでください
-- 読み取りが不鮮明でも、見えている数字をそのまま出力してください
-- JSON以外の文字列は出力しないでください"""
+6. 口座番号:
+   「口座番号」欄（ゆうちょ以外）に記入されている7桁の数字をそのまま返す。
+   ※ 口座番号は必ず7桁です。7桁で返してください。空欄なら null。
 
-    def _parse_claude_response(self, response) -> ClaudeExtractionResult:
-        """Claude応答をパースしてClaudeExtractionResultに変換"""
+7. 記号番号:
+   「※ゆうちょ銀行ご利用の場合」セクションの記号・番号欄に手書き記入された数字。空欄なら null。
+   ※ 印刷済みの「00100-3-578806」等の加入者番号とは異なるので注意。
+
+8. 銀行番号:
+   「※ゆうちょ銀行以外の金融機関ご利用の場合」セクション内、金融機関名の下にある「コード」欄の4桁数字。
+   先頭0を省略せず4桁で返す（例: "0137"）。
+
+9. 支店番号:
+   同セクション内、支店名の下にある「店番号」欄の3桁数字。
+   先頭0を省略せず3桁で返す（例: "209"）。
+
+10. 委託者番号:
+    帳票下部「収納企業使用欄」の「委託者番号・契約者番号」マス目。
+    このマス目は10桁あり、太い仕切り線で前半5桁と後半5桁に分かれている。
+    前半5桁の数字を返す。
+
+11. 契約者番号:
+    同マス目の後半5桁の数字を返す。
+    ※ 前半5桁(委託者番号)とは別の数字。仕切り線の右側を読む。
+
+【出力形式】
+以下のJSON形式のみ出力。説明文は不要。
+各フィールドに confidence (0-100) を付与すること。
+
+{{"収納代行会社名":{{"value":"","confidence":0}},"預金種目":{{"value":"","confidence":0}},"届出印":{{"value":"","confidence":0}},"預金者名フリガナ":{{"value":"","confidence":0}},"預金者名氏名":{{"value":"","confidence":0}},"口座番号":{{"value":"","confidence":0}},"記号番号":{{"value":"","confidence":0}},"銀行番号":{{"value":"","confidence":0}},"支店番号":{{"value":"","confidence":0}},"委託者番号":{{"value":"","confidence":0}},"契約者番号":{{"value":"","confidence":0}}}}"""
+
+    def _parse_response(self, response) -> ClaudeExtractionResult:
+        """Step2の応答をパース"""
         response_body = json.loads(response["body"].read())
 
         content = response_body.get("content", [])
@@ -174,46 +254,45 @@ class ClaudeClient:
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError as e:
-            logger.error(f"Claude応答のJSONパースに失敗: {e}")
-            logger.error(f"応答テキスト: {text_response[:500]}")
-            raise ValueError(f"Claude応答のJSONパースに失敗しました: {e}")
+            logger.error(f"Step2 JSONパースに失敗: {e}")
+            logger.error(f"応答: {text_response[:500]}")
+            raise ValueError(f"Claude応答のJSONパースに失敗: {e}")
 
-        form_type = FormType(data.get("form_type", "general"))
-
+        # OcrFieldリスト構築
         extracted_fields = []
-        for field_data in data.get("fields", []):
-            confidence_score = float(field_data.get("confidence_score", 100))
+        for field_name, field_data in data.items():
+            if isinstance(field_data, dict):
+                value = field_data.get("value")
+                confidence = float(field_data.get("confidence", 90))
+            else:
+                # フラットJSON形式のフォールバック
+                value = field_data
+                confidence = 90.0
+
             confidence_level = (
-                ConfidenceLevel.LOW
-                if confidence_score < CONFIDENCE_THRESHOLD
-                else ConfidenceLevel.HIGH
+                ConfidenceLevel.HIGH if confidence >= CONFIDENCE_THRESHOLD
+                else ConfidenceLevel.LOW
             )
-            extracted_fields.append(
-                OcrField(
-                    field_name=field_data.get("field_name", ""),
-                    value=field_data.get("value"),
-                    confidence_score=confidence_score,
-                    confidence_level=confidence_level,
-                    is_confirmed=False,
-                    corrected_value=None,
-                )
-            )
+            extracted_fields.append(OcrField(
+                field_name=field_name,
+                value=value if value else None,
+                confidence_score=confidence,
+                confidence_level=confidence_level,
+                is_confirmed=False,
+                corrected_value=None,
+            ))
 
         needs_review_fields = [
-            field_data.get("field_name", "")
-            for field_data in data.get("fields", [])
-            if field_data.get("needs_review", False)
+            f.field_name for f in extracted_fields
+            if f.confidence_level == ConfidenceLevel.LOW
         ]
 
-        deficiency_notes = data.get("deficiency_notes", [])
-        correction_suggestions = data.get("correction_suggestions", {})
-
         return ClaudeExtractionResult(
-            form_type=form_type,
+            form_type=FormType.GENERAL,
             extracted_fields=extracted_fields,
             needs_review_fields=needs_review_fields,
-            deficiency_notes=deficiency_notes,
-            correction_suggestions=correction_suggestions,
+            deficiency_notes=[],
+            correction_suggestions={},
         )
 
     def _extract_json(self, text: str) -> str:

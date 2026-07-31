@@ -13,15 +13,30 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja">
-      <body className="min-h-screen bg-gray-50 text-gray-900">
-        <header className="bg-white shadow-sm border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 py-4">
-            <h1 className="text-xl font-bold text-gray-800">
-              OCR口座振替依頼書処理システム
-            </h1>
+      <body className="min-h-screen bg-gray-50 text-gray-900 flex flex-col">
+        {/* ヘッダー */}
+        <header className="bg-white shadow-sm border-b-4 border-blue-600">
+          <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              {/* きらぼし銀行ロゴ */}
+              <img src="/logo-kiraboshi.png" alt="きらぼし銀行" height="36" className="h-9" />
+              <div className="border-l border-gray-300 pl-4">
+                <p className="text-sm font-semibold text-gray-800">OCR口座振替依頼書処理システム</p>
+                <p className="text-xs text-gray-500">AIによる口座振替依頼書の自動データ抽出</p>
+              </div>
+            </div>
           </div>
         </header>
-        <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+
+        {/* メインコンテンツ */}
+        <main className="flex-1">{children}</main>
+
+        {/* フッター */}
+        <footer className="bg-white border-t border-gray-200 py-4">
+          <p className="text-center text-xs text-gray-400">
+            &copy; Kiraboshi Bank, Ltd. All Rights Reserved.
+          </p>
+        </footer>
       </body>
     </html>
   );

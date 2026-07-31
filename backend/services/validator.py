@@ -18,32 +18,13 @@ class Validator:
         self, fields: list[OcrField], form_type: FormType
     ) -> list[ValidationError]:
         """
-        新3カテゴリ体系でのバリデーション
-
-        - カテゴリ1: 〇印チェック — 「未選択」「なし」はエラー
-        - カテゴリ2: 未入力チェック — 「未記入」はエラー
-        - カテゴリ3: 契約者番号が読み取れなかったらエラー
+        2段階OCR体系でのバリデーション
+        実際の文字列を返す方式のため、nullのフィールドをエラーとする
         """
         errors: list[ValidationError] = []
         field_map = {f.field_name: f for f in fields}
 
-        # カテゴリ1: 〇印チェック
-        agency = field_map.get("収納代行会社名")
-        if agency and agency.value == "未選択":
-            errors.append(ValidationError(
-                field_name="収納代行会社名",
-                error_type=ValidationErrorType.MISSING_FIELD,
-                message="収納代行会社名に〇印がありません",
-            ))
-
-        deposit = field_map.get("預金種目")
-        if deposit and deposit.value == "未選択":
-            errors.append(ValidationError(
-                field_name="預金種目",
-                error_type=ValidationErrorType.MISSING_FIELD,
-                message="預金種目に〇印がありません",
-            ))
-
+        # 届出印チェック
         seal = field_map.get("届出印")
         if seal and seal.value == "なし":
             errors.append(ValidationError(
@@ -52,25 +33,19 @@ class Validator:
                 message="届出印が押印されていません",
             ))
 
-        # カテゴリ2: 未入力チェック
-        input_fields = ["預金者名フリガナ", "預金者名氏名", "口座番号", "記号番号"]
-        for name in input_fields:
+        # null（読み取り不可）フィールドをエラーとする
+        required_fields = [
+            "預金者名フリガナ", "預金者名氏名", "口座番号",
+            "銀行番号", "支店番号", "契約者番号"
+        ]
+        for name in required_fields:
             field = field_map.get(name)
-            if field and field.value == "未記入":
+            if not field or not field.value:
                 errors.append(ValidationError(
                     field_name=name,
                     error_type=ValidationErrorType.MISSING_FIELD,
-                    message=f"{name}が記入されていません",
+                    message=f"{name}が読み取れません",
                 ))
-
-        # カテゴリ3: 契約者番号が未取得
-        contract = field_map.get("契約者番号")
-        if not contract or not contract.value or contract.value.strip() == "":
-            errors.append(ValidationError(
-                field_name="契約者番号",
-                error_type=ValidationErrorType.MISSING_FIELD,
-                message="契約者番号が読み取れません",
-            ))
 
         return errors
 

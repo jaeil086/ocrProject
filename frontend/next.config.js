@@ -10,6 +10,10 @@ const nextConfig = {
       },
     ];
   },
+  // 2段階OCR処理に対応するためタイムアウトを延長
+  experimental: {
+    proxyTimeout: 300000, // 5分
+  },
 };
 
 module.exports = nextConfig;

@@ -17,13 +17,22 @@ export async function uploadFiles(files: File[]): Promise<UploadResponse> {
   const formData = new FormData();
   files.forEach(file => formData.append('files', file));
 
-  const res = await fetch(`${API_BASE}/upload`, {
-    method: 'POST',
-    body: formData,
-  });
+  // 2段階OCR処理のため長めのタイムアウト（5分）
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 300000);
 
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  try {
+    const res = await fetch(`${API_BASE}/upload`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**
