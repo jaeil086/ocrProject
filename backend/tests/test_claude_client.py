@@ -48,17 +48,19 @@ def _make_text_response(text: str) -> dict:
 def step2_response_data():
     """Step2のStructured Outputs準拠JSON応答データ"""
     return {
-        "収納代行会社名": {"value": "きらぼしシステム株式会社", "confidence": 92},
+        "預金者氏名": {"value": "山田 太郎", "confidence": 82},
+        "預金者フリガナ": {"value": "ヤマダ タロウ", "confidence": 85},
+        "銀行名": {"value": "みずほ銀行", "confidence": 92},
+        "支店名": {"value": "東京営業部", "confidence": 88},
         "預金種目": {"value": "普通", "confidence": 95},
-        "届出印": {"value": "あり", "confidence": 88},
-        "預金者名フリガナ": {"value": "ヤマダ タロウ", "confidence": 85},
-        "預金者名氏名": {"value": "山田 太郎", "confidence": 82},
         "口座番号": {"value": "1234567", "confidence": 60},
-        "記号番号": {"value": None, "confidence": 50},
         "銀行番号": {"value": "0137", "confidence": 90},
-        "支店番号": {"value": "209", "confidence": 88},
+        "店番号": {"value": "209", "confidence": 88},
+        "振替日": {"value": "27", "confidence": 92},
         "委託者番号": {"value": "12345", "confidence": 75},
         "契約者番号": {"value": "67890", "confidence": 72},
+        "委託者名": {"value": "テスト株式会社", "confidence": 90},
+        "料金等の種類": {"value": "ご利用料", "confidence": 50},
     }
 
 
@@ -76,7 +78,7 @@ class TestParseResponse:
 
         assert isinstance(result, ClaudeExtractionResult)
         assert result.form_type == FormType.GENERAL
-        assert len(result.extracted_fields) == 11
+        assert len(result.extracted_fields) == 13
 
     def test_parse_confidence_levels(self, step2_response_data):
         """Confidence Levelが閾値70.0で正しく判定される"""
@@ -104,20 +106,22 @@ class TestParseResponse:
         mock_response = _make_invoke_response(step2_response_data)
         result = client._parse_response(mock_response)
 
-        # confidence < 70 のフィールド: 口座番号(60), 記号番号(50)
+        # confidence < 70 のフィールド: 口座番号(60), 料金等の種類(50)
         assert "口座番号" in result.needs_review_fields
-        assert "記号番号" in result.needs_review_fields
+        assert "料金等の種類" in result.needs_review_fields
 
     def test_parse_null_values(self, step2_response_data):
         """null値のフィールドはvalue=Noneとして処理される"""
+        # null値のフィールドを含むデータを作成
+        step2_response_data["銀行名"] = {"value": None, "confidence": 50}
         client = ClaudeClient.__new__(ClaudeClient)
         mock_response = _make_invoke_response(step2_response_data)
         result = client._parse_response(mock_response)
 
-        symbol_field = next(
-            f for f in result.extracted_fields if f.field_name == "記号番号"
+        bank_field = next(
+            f for f in result.extracted_fields if f.field_name == "銀行名"
         )
-        assert symbol_field.value is None
+        assert bank_field.value is None
 
     def test_parse_fields_are_not_confirmed(self, step2_response_data):
         """パース結果のフィールドはすべて未確認状態"""
@@ -165,34 +169,38 @@ class TestStep1Prompt:
 
 
 class TestStep2Prompt:
-    """_step2_promptメソッドのテスト"""
+    """_step2_system_prompt / _step2_user_promptメソッドのテスト"""
 
-    def test_step2_prompt_includes_raw_text(self):
-        """Step2プロンプトにStep1のOCRテキストが埋め込まれる"""
+    def test_step2_user_prompt_includes_raw_text(self):
+        """Step2ユーザープロンプトにStep1のOCRテキストが埋め込まれる"""
         client = ClaudeClient.__new__(ClaudeClient)
         raw_text = "テスト用OCRテキスト みずほ銀行 東京営業部"
-        prompt = client._step2_prompt(raw_text)
+        prompt = client._step2_user_prompt(raw_text)
 
         assert raw_text in prompt
 
-    def test_step2_prompt_includes_field_definitions(self):
-        """Step2プロンプトにフィールド定義が含まれる"""
+    def test_step2_system_prompt_includes_field_definitions(self):
+        """Step2システムプロンプトにフィールド定義が含まれる"""
         client = ClaudeClient.__new__(ClaudeClient)
-        prompt = client._step2_prompt("テスト")
+        prompt = client._step2_system_prompt()
 
-        assert "収納代行会社名" in prompt
+        assert "預金者氏名" in prompt
+        assert "預金者フリガナ" in prompt
+        assert "銀行名" in prompt
+        assert "支店名" in prompt
         assert "預金種目" in prompt
-        assert "届出印" in prompt
         assert "口座番号" in prompt
         assert "委託者番号" in prompt
         assert "契約者番号" in prompt
+        assert "委託者名" in prompt
+        assert "料金等の種類" in prompt
 
-    def test_step2_prompt_includes_json_format(self):
-        """Step2プロンプトにJSON出力形式の指示が含まれる"""
+    def test_step2_system_prompt_includes_json_format(self):
+        """Step2システムプロンプトにJSON出力形式の指示が含まれる"""
         client = ClaudeClient.__new__(ClaudeClient)
-        prompt = client._step2_prompt("テスト")
+        prompt = client._step2_system_prompt()
 
-        assert "JSON" in prompt
+        assert "JSON" in prompt or "json" in prompt
         assert "confidence" in prompt
 
 
@@ -212,12 +220,12 @@ class TestOutputSchema:
         assert schema["additionalProperties"] is False
 
     def test_schema_has_all_required_fields(self):
-        """スキーマに全11フィールドが定義されている"""
+        """スキーマに全13フィールドが定義されている"""
         schema = ClaudeClient.STEP2_OUTPUT_SCHEMA
         expected_fields = [
-            "収納代行会社名", "預金種目", "届出印", "預金者名フリガナ",
-            "預金者名氏名", "口座番号", "記号番号", "銀行番号",
-            "支店番号", "委託者番号", "契約者番号",
+            "預金者氏名", "預金者フリガナ", "銀行名", "支店名",
+            "預金種目", "口座番号", "銀行番号", "店番号",
+            "振替日", "委託者番号", "契約者番号", "委託者名", "料金等の種類",
         ]
 
         for field in expected_fields:
@@ -265,7 +273,7 @@ class TestExtractFieldsFromImage:
         # invoke_modelが2回呼ばれたことを確認
         assert mock_bedrock.invoke_model.call_count == 2
         assert isinstance(result, ClaudeExtractionResult)
-        assert len(result.extracted_fields) == 11
+        assert len(result.extracted_fields) == 13
 
     @patch("boto3.client")
     def test_image_is_base64_encoded(self, mock_boto3_client, step2_response_data):

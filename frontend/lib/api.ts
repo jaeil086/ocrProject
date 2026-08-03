@@ -5,6 +5,8 @@ import type {
   OcrDocument,
   OcrField,
   VisualCheck,
+  BatchUploadResponse,
+  BatchStatusResponse,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -138,6 +140,88 @@ export async function downloadPdf(fileId: string): Promise<void> {
   // Content-Dispositionヘッダーからファイル名を取得
   a.download =
     res.headers.get('content-disposition')?.split("''")[1] || `${fileId}.pdf`;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+// === バッチ処理API ===
+
+/**
+ * バッチアップロード（複数PDF一括アップロード）
+ * バックグラウンドでOCR処理を開始し、batch_idを返す
+ */
+export async function batchUpload(files: File[]): Promise<BatchUploadResponse> {
+  const formData = new FormData();
+  files.forEach(file => formData.append('files', file));
+
+  const res = await fetch(`${API_BASE}/batch/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/**
+ * バッチ処理状況取得（ポーリング用）
+ */
+export async function getBatchStatus(batchId: string): Promise<BatchStatusResponse> {
+  const res = await fetch(`${API_BASE}/batch/${batchId}/status`);
+
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/**
+ * 個別ファイル再処理
+ */
+export async function reprocessFile(
+  batchId: string,
+  fileId: string
+): Promise<{ message: string; file_id: string; batch_id: string }> {
+  const res = await fetch(`${API_BASE}/batch/${batchId}/files/${fileId}/reprocess`, {
+    method: 'POST',
+  });
+
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/**
+ * バッチ全体結果CSVダウンロード
+ */
+export async function downloadBatchCsv(batchId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/batch/${batchId}/download/csv`);
+
+  if (!res.ok) throw new Error(await res.text());
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download =
+    res.headers.get('content-disposition')?.split("''")[1] ||
+    `OCR_BATCH_RESULT_${batchId}.csv`;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+/**
+ * バッチ全原本PDFのZIPダウンロード
+ */
+export async function downloadBatchZip(batchId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/batch/${batchId}/download/zip`);
+
+  if (!res.ok) throw new Error(await res.text());
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download =
+    res.headers.get('content-disposition')?.split("''")[1] ||
+    `OCR_BATCH_RESULT_${batchId}.zip`;
   a.click();
   window.URL.revokeObjectURL(url);
 }

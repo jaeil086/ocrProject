@@ -29,7 +29,7 @@ class PdfRenamer:
 
         パターン:
         1. 委託者番号または契約番号が未取得 → UNKNOWN_{FileID}.{ext}
-        2. 未確認のLOW confidenceフィールドあり → {FileID}_★要確認_{委託者番号}_{契約番号}.{ext}
+        2. 未確認のLOW confidenceフィールドあり →★要確認_{委託者番号}_{契約番号}.{ext}
         3. 通常 → {FileID}_{委託者番号}_{契約番号}.{ext}
         """
         file_id = document.file_id
@@ -45,6 +45,6 @@ class PdfRenamer:
         )
 
         if has_unconfirmed_low:
-            return f"{file_id}_★要確認_{consignor}_{contract}.{extension}"
+            return f"★要確認_{consignor}_{contract}.{extension}"
 
         return f"{file_id}_{consignor}_{contract}.{extension}"

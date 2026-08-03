@@ -35,8 +35,8 @@ class Validator:
 
         # null（読み取り不可）フィールドをエラーとする
         required_fields = [
-            "預金者名フリガナ", "預金者名氏名", "口座番号",
-            "銀行番号", "支店番号", "契約者番号"
+            "預金者フリガナ", "預金者氏名", "口座番号",
+            "銀行番号", "店番号", "契約者番号"
         ]
         for name in required_fields:
             field = field_map.get(name)

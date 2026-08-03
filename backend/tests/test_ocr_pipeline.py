@@ -37,7 +37,7 @@ def sample_claude_result():
         form_type=FormType.GENERAL,
         extracted_fields=[
             OcrField(
-                field_name="預金者名氏名",
+                field_name="預金者氏名",
                 value="東京太郎",
                 confidence_score=85.0,
                 confidence_level=ConfidenceLevel.HIGH,
@@ -67,8 +67,20 @@ def sample_claude_result():
                 confidence_level=ConfidenceLevel.HIGH,
             ),
             OcrField(
-                field_name="支店番号",
+                field_name="店番号",
                 value="681",
+                confidence_score=88.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
+                field_name="銀行名",
+                value="三井住友銀行",
+                confidence_score=90.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
+                field_name="支店名",
+                value="国領",
                 confidence_score=88.0,
                 confidence_level=ConfidenceLevel.HIGH,
             ),
@@ -95,7 +107,7 @@ class TestOcrPipelineProcess:
         assert result.error_message is None
         assert result.document.file_id == "file-001"
         assert result.document.form_type == FormType.GENERAL
-        assert len(result.document.fields) == 6
+        assert len(result.document.fields) == 8
 
     @pytest.mark.asyncio
     async def test_PDF読み込みで空のページリスト(self, pipeline):
@@ -135,6 +147,8 @@ class TestOcrPipelineProcess:
         assert doc.contract_number == "10116"
         assert doc.bank_code == "0009"
         assert doc.branch_code == "681"
+        assert doc.bank_name == "三井住友銀行"
+        assert doc.branch_name == "国領"
 
     @pytest.mark.asyncio
     async def test_前処理画像がClaudeに渡される(self, pipeline, sample_claude_result):

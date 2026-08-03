@@ -42,3 +42,23 @@ class VisualCheckType(str, Enum):
     SEAL = "目視確認必要"              # 届出印
     CIRCLE_MARK = "目視確認必要"       # 〇印選択
     AGENCY_CHECK = "確認者チェック必要"  # 収納代行会社
+
+
+# === バッチ処理用列挙型 ===
+
+
+class BatchFileStatus(str, Enum):
+    """バッチ処理ファイルステータス"""
+    QUEUED = "queued"               # 待機中
+    PROCESSING = "processing"       # 処理中
+    COMPLETED = "completed"         # 完了
+    NEEDS_REVIEW = "needs_review"   # 確認必要
+    FAILED = "failed"               # 失敗
+
+
+class BatchJobStatus(str, Enum):
+    """バッチジョブ全体ステータス"""
+    UPLOADING = "uploading"         # アップロード中
+    PROCESSING = "processing"       # 処理中
+    COMPLETED = "completed"         # 全件完了
+    PARTIAL = "partial"             # 一部失敗あり

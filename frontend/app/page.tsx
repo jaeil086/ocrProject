@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import FileDropzone from '@/components/upload/FileDropzone';
 import UploadProgress from '@/components/upload/UploadProgress';
 import StatusBadge from '@/components/common/StatusBadge';
-import { uploadFiles } from '@/lib/api';
+import { uploadFiles, batchUpload } from '@/lib/api';
 import type { UploadResponse } from '@/types';
 
 /**
  * アップロード画面
+ * バッチ処理モード（複数PDF一括アップロード）に対応
  */
 export default function UploadPage() {
   const router = useRouter();
@@ -30,19 +31,17 @@ export default function UploadPage() {
 
     setIsUploading(true);
     setError(null);
-    setUploadStatus('OCR処理中...');
 
     try {
-      const response = await uploadFiles(selectedFiles);
-      setResults(response);
-      setUploadStatus('完了');
-
-      if (response.files.length === 1) {
-        router.push(`/result/${response.files[0].file_id}`);
-      }
+      // バッチ処理モード: バッチアップロードAPIを使用し、管理画面へ遷移
+      setUploadStatus(`${selectedFiles.length}件のファイルをアップロード中...`);
+      const response = await batchUpload(selectedFiles);
+      setUploadStatus('アップロード完了。バッチ管理画面に移動します...');
+      
+      // バッチ管理画面へ遷移
+      router.push(`/batch/${response.batch_id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました');
-    } finally {
       setIsUploading(false);
     }
   };
@@ -71,10 +70,10 @@ export default function UploadPage() {
         <div className="relative z-10 max-w-4xl mx-auto px-6 py-12">
           <div className="text-center mb-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              口座振替依頼書 OCR処理
+              口座振替依頼書 OCRバッチ処理
             </h2>
             <p className="text-sm text-gray-500">
-              PDF形式の口座振替依頼書をアップロードしてください
+              PDF形式の口座振替依頼書をアップロードしてください（最大100件まで一括処理可能）
             </p>
           </div>
 

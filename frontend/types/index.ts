@@ -103,3 +103,66 @@ export interface VisualCheckUpdateRequest {
 export interface ConfirmRequest {
   confirmed_by: string;
 }
+
+// === バッチ処理関連の型定義 ===
+
+/** バッチファイルステータス */
+export type BatchFileStatus =
+  | 'queued'
+  | 'processing'
+  | 'completed'
+  | 'needs_review'
+  | 'failed';
+
+/** バッチジョブ全体ステータス */
+export type BatchJobStatus =
+  | 'uploading'
+  | 'processing'
+  | 'completed'
+  | 'partial';
+
+/** バッチ処理ログエントリ */
+export interface BatchLogEntry {
+  timestamp: string;
+  message: string;
+  level: string;
+}
+
+/** バッチ処理ファイル項目 */
+export interface BatchFileItem {
+  file_id: string;
+  seq_number: number;
+  original_filename: string;
+  batch_filename: string;
+  consignor_number: string | null;
+  contract_number: string | null;
+  status: BatchFileStatus;
+  error_message: string | null;
+  processing_started_at: string | null;
+  processing_completed_at: string | null;
+  updated_at: string;
+  logs: BatchLogEntry[];
+}
+
+/** バッチ処理状況レスポンス */
+export interface BatchStatusResponse {
+  batch_id: string;
+  status: BatchJobStatus;
+  total_files: number;
+  completed: number;
+  processing: number;
+  needs_review: number;
+  failed: number;
+  queued: number;
+  progress_percent: number;
+  created_at: string;
+  updated_at: string;
+  files: BatchFileItem[];
+}
+
+/** バッチアップロードレスポンス */
+export interface BatchUploadResponse {
+  batch_id: string;
+  total_files: number;
+  message: string;
+}

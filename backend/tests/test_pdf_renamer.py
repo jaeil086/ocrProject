@@ -59,7 +59,7 @@ class TestGenerateFilename:
         assert result == "FILE001_12345_67890.pdf"
 
     def test_with_review_marker(self, renamer: PdfRenamer):
-        """未確認LOW項目あり: {FileID}_★要確認_{委託者番号}_{契約番号}.pdf"""
+        """未確認LOW項目あり: {★要確認_{委託者番号}_{契約番号}.pdf"""
         document = _make_document(
             file_id="FILE002",
             consignor_number="11111",
@@ -75,7 +75,7 @@ class TestGenerateFilename:
             ],
         )
         result = renamer.generate_filename(document)
-        assert result == "FILE002_★要確認_11111_22222.pdf"
+        assert result == "★要確認_11111_22222.pdf"
 
     def test_confirmed_low_field_no_review_marker(self, renamer: PdfRenamer):
         """確認済みLOW項目のみ: ★要確認マーカーなし"""
@@ -196,7 +196,7 @@ class TestRename:
         result_bytes, result_filename = renamer.rename(original_bytes, document)
 
         assert result_bytes is original_bytes
-        assert result_filename == "FILE011_★要確認_11111_22222.pdf"
+        assert result_filename == "★要確認_11111_22222.pdf"
 
     def test_rename_with_unknown_format(self, renamer: PdfRenamer):
         """番号未取得の場合のrename()テスト"""

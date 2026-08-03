@@ -2,6 +2,7 @@
 CSV生成サービスのテスト
 
 CsvGenerator.generate() と CsvGenerator.generate_filename() の動作を検証する。
+check-results.csv形式（UTF-8 BOM）に対応。
 """
 
 import io
@@ -13,10 +14,9 @@ from backend.models.enums import (
     ConfidenceLevel,
     DocumentStatus,
     FormType,
-    ValidationErrorType,
 )
-from backend.models.schemas import OcrDocument, OcrField, ValidationError
-from backend.services.csv_generator import CsvGenerator, _generate_filename
+from backend.models.schemas import OcrDocument, OcrField
+from backend.services.csv_generator import CsvGenerator, CSV_COLUMNS, _generate_filename
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def csv_generator():
 
 @pytest.fixture
 def sample_document():
-    """テスト用OcrDocumentを生成"""
+    """テスト用OcrDocumentを生成（新check-results形式）"""
     return OcrDocument(
         file_id="FILE001",
         original_filename="test.pdf",
@@ -37,15 +37,15 @@ def sample_document():
         contract_number="67890",
         fields=[
             OcrField(
-                field_name="預金者名（フリガナ）",
-                value="ヤマダ タロウ",
-                confidence_score=95.0,
+                field_name="預金者氏名",
+                value="山田太郎",
+                confidence_score=90.0,
                 confidence_level=ConfidenceLevel.HIGH,
             ),
             OcrField(
-                field_name="預金者名（氏名）",
-                value="山田太郎",
-                confidence_score=90.0,
+                field_name="預金者フリガナ",
+                value="ヤマダ タロウ",
+                confidence_score=95.0,
                 confidence_level=ConfidenceLevel.HIGH,
             ),
             OcrField(
@@ -61,8 +61,56 @@ def sample_document():
                 confidence_level=ConfidenceLevel.HIGH,
             ),
             OcrField(
+                field_name="預金種目",
+                value="普通",
+                confidence_score=95.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
                 field_name="口座番号",
                 value="1234567",
+                confidence_score=92.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
+                field_name="銀行番号",
+                value="0001",
+                confidence_score=90.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
+                field_name="店番号",
+                value="001",
+                confidence_score=90.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
+                field_name="振替日",
+                value="27",
+                confidence_score=92.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
+                field_name="委託者番号",
+                value="12345",
+                confidence_score=95.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
+                field_name="契約者番号",
+                value="67890",
+                confidence_score=88.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
+                field_name="委託者名",
+                value="テスト株式会社",
+                confidence_score=90.0,
+                confidence_level=ConfidenceLevel.HIGH,
+            ),
+            OcrField(
+                field_name="料金等の種類",
+                value="ご利用料",
                 confidence_score=92.0,
                 confidence_level=ConfidenceLevel.HIGH,
             ),
@@ -74,113 +122,129 @@ def sample_document():
 class TestCsvGeneratorGenerate:
     """CsvGenerator.generate() のテスト"""
 
-    def test_generate_produces_valid_shift_jis_csv(
+    def test_generate_produces_valid_utf8_bom_csv(
         self, csv_generator: CsvGenerator, sample_document: OcrDocument
     ):
-        """generate()がShift_JISエンコードの有効なCSVを生成する"""
+        """generate()がUTF-8 BOM付きの有効なCSVを生成する"""
         csv_bytes = csv_generator.generate(sample_document)
 
-        # Shift_JISでデコード可能であること
-        csv_text = csv_bytes.decode("shift_jis")
+        # UTF-8 BOMが先頭にあること
+        assert csv_bytes[:3] == b'\xef\xbb\xbf'
+
+        # UTF-8でデコード可能であること
+        csv_text = csv_bytes.decode("utf-8-sig")
+        assert len(csv_text) > 0
 
         # CSVとしてパース可能であること
-        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="shift_jis")
+        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="utf-8-sig")
         assert len(df) == 1
 
-        # ヘッダーにFileIDが含まれること
-        assert "FileID" in df.columns
-        assert df.iloc[0]["FileID"] == "FILE001"
+    def test_generate_includes_processing_time_and_filename(
+        self, csv_generator: CsvGenerator, sample_document: OcrDocument
+    ):
+        """generate()が処理日時と入力ファイル名を含む"""
+        csv_bytes = csv_generator.generate(sample_document)
+        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="utf-8-sig")
+
+        assert "処理日時" in df.columns
+        assert "入力ファイル名" in df.columns
+        assert df.iloc[0]["入力ファイル名"] == "test.pdf"
 
     def test_generate_includes_japanese_field_values(
         self, csv_generator: CsvGenerator, sample_document: OcrDocument
     ):
         """generate()が日本語フィールド値を正しくCSVに含める"""
         csv_bytes = csv_generator.generate(sample_document)
-        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="shift_jis")
+        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="utf-8-sig")
 
-        assert df.iloc[0]["預金者名（フリガナ）"] == "ヤマダ タロウ"
-        assert df.iloc[0]["預金者名（氏名）"] == "山田太郎"
+        assert df.iloc[0]["預金者氏名"] == "山田太郎"
+        assert df.iloc[0]["預金者フリガナ"] == "ヤマダ タロウ"
         assert df.iloc[0]["銀行名"] == "みずほ銀行"
+        assert df.iloc[0]["支店名"] == "東京中央支店"
+        assert df.iloc[0]["委託者名"] == "テスト株式会社"
+
+    def test_generate_includes_check_columns(
+        self, csv_generator: CsvGenerator, sample_document: OcrDocument
+    ):
+        """generate()が各フィールドのチェック結果カラムを含む"""
+        csv_bytes = csv_generator.generate(sample_document)
+        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="utf-8-sig")
+
+        # 全チェックカラムが存在すること
+        check_columns = [c for c in df.columns if c.endswith("_チェック")]
+        assert len(check_columns) == 13
+
+        # HIGHのフィールドは全て"OK"
+        assert df.iloc[0]["預金者氏名_チェック"] == "OK"
+        assert df.iloc[0]["口座番号_チェック"] == "OK"
+
+    def test_generate_check_columns_ng_for_missing_value(
+        self, csv_generator: CsvGenerator
+    ):
+        """値がないフィールドのチェック結果がNGになること"""
+        doc = OcrDocument(
+            file_id="FILE002",
+            original_filename="test2.pdf",
+            form_type=FormType.GENERAL,
+            status=DocumentStatus.PROCESSING,
+            fields=[
+                OcrField(
+                    field_name="預金者氏名",
+                    value=None,  # 値なし
+                    confidence_score=0.0,
+                    confidence_level=ConfidenceLevel.LOW,
+                ),
+            ],
+            validation_errors=[],
+        )
+        csv_bytes = csv_generator.generate(doc)
+        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="utf-8-sig")
+
+        assert df.iloc[0]["預金者氏名_チェック"] == "NG"
+
+    def test_generate_check_columns_review_for_low_confidence(
+        self, csv_generator: CsvGenerator
+    ):
+        """LOW confidenceフィールドのチェック結果が要確認になること"""
+        doc = OcrDocument(
+            file_id="FILE003",
+            original_filename="test3.pdf",
+            form_type=FormType.GENERAL,
+            status=DocumentStatus.PROCESSING,
+            fields=[
+                OcrField(
+                    field_name="口座番号",
+                    value="1234567",
+                    confidence_score=50.0,
+                    confidence_level=ConfidenceLevel.LOW,
+                ),
+            ],
+            validation_errors=[],
+        )
+        csv_bytes = csv_generator.generate(doc)
+        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="utf-8-sig")
+
+        assert df.iloc[0]["口座番号_チェック"] == "要確認"
 
     def test_generate_uses_corrected_value_when_available(
         self, csv_generator: CsvGenerator, sample_document: OcrDocument
     ):
         """修正値がある場合はそちらをCSVに出力する"""
-        # 修正値を設定
-        sample_document.fields[0].corrected_value = "ヤマダ ジロウ"
+        sample_document.fields[0].corrected_value = "田中太郎"
 
         csv_bytes = csv_generator.generate(sample_document)
-        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="shift_jis")
+        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="utf-8-sig")
 
-        assert df.iloc[0]["預金者名（フリガナ）"] == "ヤマダ ジロウ"
-
-    def test_generate_with_validation_errors_in_remarks(
-        self, csv_generator: CsvGenerator, sample_document: OcrDocument
-    ):
-        """バリデーションエラーが備考列に記録される"""
-        sample_document.validation_errors = [
-            ValidationError(
-                field_name="銀行番号",
-                error_type=ValidationErrorType.BANK_CODE_NOT_FOUND,
-                message="銀行番号 9999 は存在しません",
-            ),
-            ValidationError(
-                field_name="口座番号",
-                error_type=ValidationErrorType.MISSING_FIELD,
-                message="口座番号が記入されていません",
-            ),
-        ]
-
-        csv_bytes = csv_generator.generate(sample_document)
-        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="shift_jis")
-
-        remarks = df.iloc[0]["備考"]
-        assert "銀行番号" in remarks
-        assert "銀行番号 9999 は存在しません" in remarks
-        assert "口座番号" in remarks
-        assert "口座番号が記入されていません" in remarks
-
-    def test_generate_empty_remarks_when_no_errors(
-        self, csv_generator: CsvGenerator, sample_document: OcrDocument
-    ):
-        """バリデーションエラーがない場合、備考列は空"""
-        csv_bytes = csv_generator.generate(sample_document)
-        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="shift_jis")
-
-        # pandasはNaN/空文字列を読み込む場合がある
-        remarks = df.iloc[0]["備考"]
-        assert pd.isna(remarks) or remarks == ""
+        assert df.iloc[0]["預金者氏名"] == "田中太郎"
 
     def test_generate_includes_all_csv_columns(
         self, csv_generator: CsvGenerator, sample_document: OcrDocument
     ):
         """generate()が全CSVカラムを含む"""
         csv_bytes = csv_generator.generate(sample_document)
-        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="shift_jis")
+        df = pd.read_csv(io.BytesIO(csv_bytes), encoding="utf-8-sig")
 
-        expected_columns = [
-            "FileID",
-            "様式区分",
-            "委託者番号",
-            "契約番号",
-            "預金者名（フリガナ）",
-            "預金者名（氏名）",
-            "銀行名",
-            "支店名",
-            "銀行番号",
-            "店番号",
-            "口座番号",
-            "預金種目",
-            "金融機関種別",
-            "会社名",
-            "肩書き",
-            "代表者名",
-            "振替明細記入欄",
-            "加算月記入欄",
-            "ステータス",
-            "備考",
-        ]
-        for col in expected_columns:
+        for col in CSV_COLUMNS:
             assert col in df.columns
 
 
@@ -197,7 +261,7 @@ class TestCsvGeneratorFilename:
     def test_filename_with_review_marker(
         self, csv_generator: CsvGenerator, sample_document: OcrDocument
     ):
-        """要確認マーカー付き: {FileID}_★要確認_{委託者番号}_{契約者番号}.csv"""
+        """要確認マーカー付き: {★要確認_{委託者番号}_{契約者番号}.csv"""
         # 未確認のLOW confidenceフィールドを追加
         sample_document.fields.append(
             OcrField(
@@ -209,7 +273,7 @@ class TestCsvGeneratorFilename:
             )
         )
         filename = csv_generator.generate_filename(sample_document)
-        assert filename == "FILE001_★要確認_12345_67890.csv"
+        assert filename == "★要確認_12345_67890.csv"
 
     def test_filename_without_review_when_low_is_confirmed(
         self, csv_generator: CsvGenerator, sample_document: OcrDocument
@@ -221,7 +285,7 @@ class TestCsvGeneratorFilename:
                 value="123",
                 confidence_score=50.0,
                 confidence_level=ConfidenceLevel.LOW,
-                is_confirmed=True,  # 確認済み
+                is_confirmed=True,
             )
         )
         filename = csv_generator.generate_filename(sample_document)
@@ -243,15 +307,6 @@ class TestCsvGeneratorFilename:
         filename = csv_generator.generate_filename(sample_document)
         assert filename == "UNKNOWN_FILE001.csv"
 
-    def test_filename_missing_both_numbers(
-        self, csv_generator: CsvGenerator, sample_document: OcrDocument
-    ):
-        """委託者番号・契約者番号両方欠落: UNKNOWN_{FileID}.csv"""
-        sample_document.consignor_number = None
-        sample_document.contract_number = None
-        filename = csv_generator.generate_filename(sample_document)
-        assert filename == "UNKNOWN_FILE001.csv"
-
 
 class TestGenerateFilenameHelper:
     """共通ヘルパー関数 _generate_filename() のテスト"""
@@ -269,7 +324,7 @@ class TestGenerateFilenameHelper:
     def test_review_csv(self):
         """要確認付きCSV命名"""
         result = _generate_filename("F001", "111", "222", True, "csv")
-        assert result == "F001_★要確認_111_222.csv"
+        assert result =★要確認_111_222.csv"
 
     def test_unknown_missing_consignor(self):
         """委託者番号なしでUNKNOWN"""

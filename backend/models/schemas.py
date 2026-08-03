@@ -12,6 +12,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from backend.models.enums import (
+    BatchFileStatus,
+    BatchJobStatus,
     ConfidenceLevel,
     DocumentStatus,
     FormType,
@@ -165,3 +167,94 @@ class ConfirmRequest(BaseModel):
     """確認完了リクエスト"""
 
     confirmed_by: str
+
+
+# === バッチ処理モデル ===
+
+
+class BatchLogEntry(BaseModel):
+    """バッチ処理ログエントリ"""
+
+    timestamp: datetime = Field(default_factory=datetime.now)
+    message: str
+    level: str = "info"  # info, warning, error
+
+
+class BatchFileItem(BaseModel):
+    """バッチ処理ファイル項目"""
+
+    file_id: str  # FileID（InMemoryStoreのキーに対応）
+    seq_number: int  # 連番（1始まり）
+    original_filename: str  # アップロード時ファイル名
+    batch_filename: str  # バッチ命名規則に基づくファイル名 (例: 001_11137_10110.pdf)
+    consignor_number: Optional[str] = None  # 委託者番号
+    contract_number: Optional[str] = None  # 契約者番号
+    status: BatchFileStatus = BatchFileStatus.QUEUED
+    error_message: Optional[str] = None
+    processing_started_at: Optional[datetime] = None
+    processing_completed_at: Optional[datetime] = None
+    updated_at: datetime = Field(default_factory=datetime.now)
+    logs: list[BatchLogEntry] = []
+
+
+class BatchJob(BaseModel):
+    """バッチジョブ（全体管理）"""
+
+    batch_id: str  # バッチジョブID
+    status: BatchJobStatus = BatchJobStatus.UPLOADING
+    total_files: int = 0
+    files: list[BatchFileItem] = []
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    @property
+    def completed_count(self) -> int:
+        return sum(1 for f in self.files if f.status == BatchFileStatus.COMPLETED)
+
+    @property
+    def processing_count(self) -> int:
+        return sum(1 for f in self.files if f.status == BatchFileStatus.PROCESSING)
+
+    @property
+    def needs_review_count(self) -> int:
+        return sum(1 for f in self.files if f.status == BatchFileStatus.NEEDS_REVIEW)
+
+    @property
+    def failed_count(self) -> int:
+        return sum(1 for f in self.files if f.status == BatchFileStatus.FAILED)
+
+    @property
+    def queued_count(self) -> int:
+        return sum(1 for f in self.files if f.status == BatchFileStatus.QUEUED)
+
+    @property
+    def progress_percent(self) -> int:
+        if self.total_files == 0:
+            return 0
+        done = self.completed_count + self.needs_review_count + self.failed_count
+        return int(done / self.total_files * 100)
+
+
+class BatchStatusResponse(BaseModel):
+    """バッチ状況レスポンス"""
+
+    batch_id: str
+    status: BatchJobStatus
+    total_files: int
+    completed: int
+    processing: int
+    needs_review: int
+    failed: int
+    queued: int
+    progress_percent: int
+    created_at: datetime
+    updated_at: datetime
+    files: list[BatchFileItem]
+
+
+class BatchUploadResponse(BaseModel):
+    """バッチアップロードレスポンス"""
+
+    batch_id: str
+    total_files: int
+    message: str
