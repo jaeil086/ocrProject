@@ -26,9 +26,19 @@ export default function BatchPage() {
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // ポーリング制御用ref
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const isPollingActive = useRef(true);
 
-  // バッチ状況取得
+  // ポーリングが必要かどうか判定
+  const shouldStopPolling = useCallback((data: BatchStatusResponse) => {
+    if (data.status === 'completed' || data.status === 'partial') {
+      return data.processing === 0 && data.queued === 0;
+    }
+    return false;
+  }, []);
+
+  // バッチ状況取得（単発）
   const fetchStatus = useCallback(async () => {
     try {
       const data = await getBatchStatus(batchId);
@@ -36,51 +46,78 @@ export default function BatchPage() {
       setError(null);
 
       // 初回ロード時に最初のファイルを自動選択
-      if (!selectedFileId && data.files.length > 0) {
-        setSelectedFileId(data.files[0].file_id);
-      }
+      setSelectedFileId((prev) => {
+        if (!prev && data.files.length > 0) {
+          return data.files[0].file_id;
+        }
+        return prev;
+      });
+
+      return data;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'ステータスの取得に失敗しました');
+      return null;
     } finally {
       setLoading(false);
     }
-  }, [batchId, selectedFileId]);
+  }, [batchId]);
 
-  // 初回ロードとポーリング
+  // setTimeoutチェーン方式のポーリング（リクエスト完了後に次を予約するため重複しない）
   useEffect(() => {
-    fetchStatus();
+    isPollingActive.current = true;
 
-    pollingRef.current = setInterval(fetchStatus, POLL_INTERVAL);
+    const poll = async () => {
+      if (!isPollingActive.current) return;
 
-    return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
+      const data = await fetchStatus();
+
+      // 処理完了ならポーリング停止
+      if (data && shouldStopPolling(data)) {
+        isPollingActive.current = false;
+        return;
+      }
+
+      // まだアクティブなら次のポーリングを予約
+      if (isPollingActive.current) {
+        pollingRef.current = setTimeout(poll, POLL_INTERVAL);
       }
     };
-  }, [fetchStatus]);
 
-  // 処理完了時にポーリング停止
-  useEffect(() => {
-    if (status && (status.status === 'completed' || status.status === 'partial')) {
-      if (status.processing === 0 && status.queued === 0) {
-        if (pollingRef.current) {
-          clearInterval(pollingRef.current);
-          pollingRef.current = null;
-        }
+    // 初回実行
+    poll();
+
+    return () => {
+      isPollingActive.current = false;
+      if (pollingRef.current) {
+        clearTimeout(pollingRef.current);
+        pollingRef.current = null;
       }
-    }
-  }, [status]);
+    };
+  }, [fetchStatus, shouldStopPolling]);
 
   // 再処理ハンドラー
   const handleReprocess = async (fileId: string) => {
     try {
       await reprocessFile(batchId, fileId);
       // ポーリング再開（停止していた場合）
-      if (!pollingRef.current) {
-        pollingRef.current = setInterval(fetchStatus, POLL_INTERVAL);
+      if (!isPollingActive.current) {
+        isPollingActive.current = true;
+        const poll = async () => {
+          if (!isPollingActive.current) return;
+          const data = await fetchStatus();
+          if (data && shouldStopPolling(data)) {
+            isPollingActive.current = false;
+            return;
+          }
+          if (isPollingActive.current) {
+            pollingRef.current = setTimeout(poll, POLL_INTERVAL);
+          }
+        };
+        poll();
+      } else {
+        // 即座にステータス更新
+        await fetchStatus();
       }
-      // 即座にステータス更新
-      await fetchStatus();
     } catch (e) {
       alert(e instanceof Error ? e.message : '再処理の開始に失敗しました');
     }

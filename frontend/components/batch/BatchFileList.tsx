@@ -41,7 +41,7 @@ function StatusBadge({ status }: { status: BatchFileStatus }) {
 
   const c = config[status];
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${c.className}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${c.className}`}>
       <span aria-hidden="true">{c.icon}</span>
       {c.label}
     </span>
@@ -163,17 +163,17 @@ export default function BatchFileList({
         </select>
       </div>
 
-      {/* テーブル */}
+      {/* 「ファイル一覧」テーブル */}
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="text-left px-3 py-2 font-medium text-gray-500">No.</th>
-              <th className="text-left px-3 py-2 font-medium text-gray-500">ファイル名</th>
-              <th className="text-left px-3 py-2 font-medium text-gray-500">委託者番号</th>
-              <th className="text-left px-3 py-2 font-medium text-gray-500">契約者番号</th>
-              <th className="text-left px-3 py-2 font-medium text-gray-500">状態</th>
-              <th className="text-left px-3 py-2 font-medium text-gray-500">最終更新</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-500">No.</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-500">ファイル名</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-500">委託者番号</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-500">契約者番号</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-500">状態</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-500">最終更新</th>
             </tr>
           </thead>
           <tbody>
