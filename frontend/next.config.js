@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 開発時のuseEffect二重実行を抑制
+  // 開発時のuseEffect二重実行を抑制 : Prevent multiple execution of useEffect
   reactStrictMode: false,
   // バックエンドAPIプロキシ設定
   // /api/* へのリクエストをFastAPIバックエンド(localhost:8000)に転送

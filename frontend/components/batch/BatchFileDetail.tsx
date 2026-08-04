@@ -10,26 +10,26 @@ interface BatchFileDetailProps {
   onReprocess: (fileId: string) => void;
 }
 
-type TabId = 'preview' | 'ocr' | 'check' | 'log';
+type TabId = 'preview_ocr' | 'log';
 
-/** チェック結果バッジ */
-function CheckBadge({ field }: { field: OcrField }) {
+/** チェック結果インラインバッジ */
+function InlineCheckBadge({ field }: { field: OcrField }) {
   if (!field.value) {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
         NG
       </span>
     );
   }
   if (field.confidence_level === 'low') {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-600">
         確認必要
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-600">
       OK
     </span>
   );
@@ -37,14 +37,16 @@ function CheckBadge({ field }: { field: OcrField }) {
 
 /**
  * バッチファイル詳細コンポーネント
- * 右側パネル: PDFプレビュー・OCR結果・チェック結果・処理ログをタブで切り替え
+ * 右側パネル:
+ *   - 原本PDFプレビュー + OCR抽出結果（チェック結果バッジ付き）を左右並列表示
+ *   - 処理ログタブ
  */
 export default function BatchFileDetail({
   file,
   batchId,
   onReprocess,
 }: BatchFileDetailProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('preview');
+  const [activeTab, setActiveTab] = useState<TabId>('preview_ocr');
   const [document, setDocument] = useState<OcrDocument | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -74,9 +76,7 @@ export default function BatchFileDetail({
   };
 
   const tabs: { id: TabId; label: string; icon: string }[] = [
-    { id: 'preview', label: '原本PDFプレビュー', icon: '📄' },
-    { id: 'ocr', label: 'OCR抽出結果', icon: '🔍' },
-    { id: 'check', label: 'チェック結果', icon: '✓' },
+    { id: 'preview_ocr', label: '原本PDFプレビュー / OCR抽出結果', icon: '📄' },
     { id: 'log', label: '処理ログ', icon: '📋' },
   ];
 
@@ -145,94 +145,73 @@ export default function BatchFileDetail({
       </div>
 
       {/* タブコンテンツ */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {/* PDFプレビュータブ */}
-        {activeTab === 'preview' && (
-          <div className="h-full min-h-[400px]">
-            {file.status === 'queued' ? (
-              <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                処理待ちです
-              </div>
-            ) : (
-              <iframe
-                src={`/api/result/${file.file_id}/pdf-preview`}
-                className="w-full h-full min-h-[500px] border border-gray-200 rounded-lg"
-                title="PDFプレビュー"
-              />
-            )}
-          </div>
-        )}
-
-        {/* OCR抽出結果タブ */}
-        {activeTab === 'ocr' && (
-          <div>
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-              </div>
-            ) : document ? (
-              <div>
-                <h4 className="text-xs font-semibold text-gray-600 mb-3">OCR抽出結果（主要項目）</h4>
-                <div className="space-y-1.5">
-                  {mainFields.map((fieldName) => {
-                    const field = document.fields.find((f) => f.field_name === fieldName);
-                    const value = field?.corrected_value || field?.value || '-';
-                    return (
-                      <div key={fieldName} className="flex items-center text-xs border-b border-gray-50 py-1.5">
-                        <span className="w-28 text-gray-500 flex-shrink-0">{fieldName}</span>
-                        <span className="flex-1 text-gray-800 font-medium">{value}</span>
-                      </div>
-                    );
-                  })}
+      <div className="flex-1 overflow-y-auto">
+        {/* 原本PDFプレビュー + OCR抽出結果（チェック結果バッジ統合） */}
+        {activeTab === 'preview_ocr' && (
+          <div className="grid grid-cols-1 xl:grid-cols-2 h-full min-h-[500px]">
+            {/* 左側: PDFプレビュー */}
+            <div className="border-r border-gray-200 h-full min-h-[500px]">
+              {file.status === 'queued' ? (
+                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                  処理待ちです
                 </div>
-              </div>
-            ) : (
-              <div className="text-center text-gray-400 text-sm py-12">
-                {file.status === 'failed'
-                  ? 'OCR処理が失敗しました'
-                  : file.status === 'processing'
-                  ? 'OCR処理中...'
-                  : '結果がまだありません'}
-              </div>
-            )}
-          </div>
-        )}
+              ) : (
+                <iframe
+                  src={`/api/result/${file.file_id}/pdf-preview`}
+                  className="w-full h-full min-h-[500px]"
+                  title="PDFプレビュー"
+                />
+              )}
+            </div>
 
-        {/* チェック結果タブ */}
-        {activeTab === 'check' && (
-          <div>
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-              </div>
-            ) : document ? (
-              <div>
-                <h4 className="text-xs font-semibold text-gray-600 mb-3">チェック結果（主要項目）</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {mainFields.map((fieldName) => {
-                    const field = document.fields.find((f) => f.field_name === fieldName);
-                    return (
-                      <div key={fieldName} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                        <span className="text-xs text-gray-600">{fieldName}</span>
-                        {field ? <CheckBadge field={field} /> : (
-                          <span className="text-xs text-gray-400">-</span>
-                        )}
-                      </div>
-                    );
-                  })}
+            {/* 右側: OCR抽出結果 + チェックバッジ統合 */}
+            <div className="p-4 overflow-y-auto">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
                 </div>
-              </div>
-            ) : (
-              <div className="text-center text-gray-400 text-sm py-12">
-                チェック結果がまだありません
-              </div>
-            )}
+              ) : document ? (
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-600 mb-4">OCR抽出結果（主要項目）</h4>
+                  <div className="space-y-0">
+                    {mainFields.map((fieldName) => {
+                      const field = document.fields.find((f) => f.field_name === fieldName);
+                      const value = field?.corrected_value || field?.value || '-';
+                      return (
+                        <div key={fieldName} className="flex items-center text-xs border-b border-gray-100 py-2.5 gap-2">
+                          {/* フィールド名 */}
+                          <span className="w-28 text-gray-500 flex-shrink-0">{fieldName}</span>
+                          {/* チェック結果バッジ */}
+                          <span className="flex-shrink-0">
+                            {field ? <InlineCheckBadge field={field} /> : (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
+                                -
+                              </span>
+                            )}
+                          </span>
+                          {/* 値 */}
+                          <span className="flex-1 text-gray-800 font-semibold text-right">{value}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center text-gray-400 text-sm py-12">
+                  {file.status === 'failed'
+                    ? 'OCR処理が失敗しました'
+                    : file.status === 'processing'
+                    ? 'OCR処理中...'
+                    : '結果がまだありません'}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {/* 処理ログタブ */}
         {activeTab === 'log' && (
-          <div>
+          <div className="p-4">
             <h4 className="text-xs font-semibold text-gray-600 mb-3">処理ログ</h4>
             {file.logs.length > 0 ? (
               <div className="space-y-1">
