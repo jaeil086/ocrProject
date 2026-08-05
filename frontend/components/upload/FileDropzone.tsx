@@ -4,13 +4,15 @@ import { useCallback, useState, useRef } from 'react';
 
 interface FileDropzoneProps {
   onFilesSelected: (files: File[]) => void;
+  /** 既存の選択済みファイル（追加モード用） */
+  existingFiles?: File[];
 }
 
 /**
  * ドラッグ&ドロップ + ファイル選択コンポーネント
- * PDF形式のみ受け付ける
+ * PDF形式のみ受け付ける。ファイル追加時は既存ファイルを維持する。
  */
-export default function FileDropzone({ onFilesSelected }: FileDropzoneProps) {
+export default function FileDropzone({ onFilesSelected, existingFiles = [] }: FileDropzoneProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,6 +32,15 @@ export default function FileDropzone({ onFilesSelected }: FileDropzoneProps) {
 
     return pdfFiles;
   }, []);
+
+  // 重複ファイルを除外してマージする
+  const mergeFiles = useCallback((newFiles: File[]): File[] => {
+    const existingNames = new Set(existingFiles.map((f) => f.name + '_' + f.size));
+    const uniqueNewFiles = newFiles.filter(
+      (f) => !existingNames.has(f.name + '_' + f.size)
+    );
+    return [...existingFiles, ...uniqueNewFiles];
+  }, [existingFiles]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -51,10 +62,10 @@ export default function FileDropzone({ onFilesSelected }: FileDropzoneProps) {
 
       const pdfFiles = filterPdfFiles(e.dataTransfer.files);
       if (pdfFiles.length > 0) {
-        onFilesSelected(pdfFiles);
+        onFilesSelected(mergeFiles(pdfFiles));
       }
     },
-    [filterPdfFiles, onFilesSelected]
+    [filterPdfFiles, mergeFiles, onFilesSelected]
   );
 
   const handleFileChange = useCallback(
@@ -62,11 +73,15 @@ export default function FileDropzone({ onFilesSelected }: FileDropzoneProps) {
       if (e.target.files && e.target.files.length > 0) {
         const pdfFiles = filterPdfFiles(e.target.files);
         if (pdfFiles.length > 0) {
-          onFilesSelected(pdfFiles);
+          onFilesSelected(mergeFiles(pdfFiles));
         }
       }
+      // input値をリセット（同じファイルを再選択可能にする）
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
     },
-    [filterPdfFiles, onFilesSelected]
+    [filterPdfFiles, mergeFiles, onFilesSelected]
   );
 
   const handleClick = useCallback(() => {

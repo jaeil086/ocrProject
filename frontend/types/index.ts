@@ -137,6 +137,7 @@ export interface BatchFileItem {
   consignor_number: string | null;
   contract_number: string | null;
   status: BatchFileStatus;
+  progress: number;
   error_message: string | null;
   processing_started_at: string | null;
   processing_completed_at: string | null;
@@ -165,4 +166,5 @@ export interface BatchUploadResponse {
   batch_id: string;
   total_files: number;
   message: string;
+  files: BatchFileItem[];
 }

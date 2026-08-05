@@ -26,6 +26,10 @@ export default function UploadPage() {
     setError(null);
   };
 
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
 
@@ -38,8 +42,14 @@ export default function UploadPage() {
       const response = await batchUpload(selectedFiles);
       setUploadStatus('アップロード完了。バッチ管理画面に移動します...');
       
-      // バッチ管理画面へ遷移
-      router.push(`/batch/${response.batch_id}`);
+      // 初期ファイル一覧をsessionStorageに保存（バッチ画面で即座に表示するため）
+      sessionStorage.setItem(
+        `batch_initial_${response.batch_id}`,
+        JSON.stringify(response.files)
+      );
+      
+      // バッチ管理画面へ遷移（total_filesをクエリパラメータで渡す）
+      router.push(`/batch/${response.batch_id}?total=${response.total_files}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました');
       setIsUploading(false);
@@ -80,7 +90,7 @@ export default function UploadPage() {
         {/* ドロップゾーン */}
         {!results && (
           <div className="w-full max-w-lg mx-auto">
-            <FileDropzone onFilesSelected={handleFilesSelected} />
+            <FileDropzone onFilesSelected={handleFilesSelected} existingFiles={selectedFiles} />
           </div>
         )}
 
@@ -93,8 +103,8 @@ export default function UploadPage() {
             <ul className="space-y-1">
               {selectedFiles.map((file, index) => (
                 <li
-                  key={`${file.name}-${index}`}
-                  className="flex items-center text-sm text-gray-600 bg-white rounded-lg px-4 py-2.5 border border-gray-200"
+                  key={`${file.name}-${file.size}-${index}`}
+                  className="flex items-center text-sm text-gray-600 bg-white rounded-lg px-4 py-2.5 border border-gray-200 group"
                 >
                   <svg
                     className="w-4 h-4 mr-2 text-red-500 flex-shrink-0"
@@ -104,10 +114,20 @@ export default function UploadPage() {
                   >
                     <path d="M4 18h12a2 2 0 002-2V6l-4-4H4a2 2 0 00-2 2v12a2 2 0 002 2zm8-14l4 4h-4V4z" />
                   </svg>
-                  <span className="truncate">{file.name}</span>
-                  <span className="ml-auto text-xs text-gray-400">
+                  <span className="truncate flex-1">{file.name}</span>
+                  <span className="ml-2 text-xs text-gray-400 flex-shrink-0">
                     {(file.size / 1024).toFixed(0)} KB
                   </span>
+                  <button
+                    onClick={() => handleRemoveFile(index)}
+                    className="ml-3 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors duration-150 flex-shrink-0"
+                    aria-label={`${file.name}を削除`}
+                    title="削除"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </li>
               ))}
             </ul>

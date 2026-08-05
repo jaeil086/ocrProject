@@ -1,31 +1,67 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import type { BatchStatusResponse, BatchFileItem } from '@/types';
 import { getBatchStatus, reprocessFile, downloadBatchCsv, downloadBatchZip } from '@/lib/api';
 import BatchStatusPanel from '@/components/batch/BatchStatusPanel';
 import BatchFileList from '@/components/batch/BatchFileList';
 import BatchFileDetail from '@/components/batch/BatchFileDetail';
 
-// ポーリング間隔（ミリ秒）
-const POLL_INTERVAL = 3000;
+// ポーリング間隔（ミリ秒）— 処理中は1.5秒、完了後は停止
+const POLL_INTERVAL = 1500;
 
 /**
  * OCRバッチ処理管理画面
  * レイアウト:
  *   上部: バッチ処理状況パネル（ステータスカード + 進捗バー + ダウンロード）
  *   下部左: ファイル一覧
- *   下部右: ファイル詳細（PDFプレビュー / OCR結果 / チェック結果 / 処理ログ）
+ *   下部右: ファイル詳細（PDFプレビュー / OCR結果 + チェック結果 / 処理ログ）
+ *
+ * 初回ロード時もすぐにUIを表示し、ポーリングで状態をリアルタイム反映する。
  */
 export default function BatchPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const batchId = params.id as string;
+  const initialTotal = parseInt(searchParams.get('total') || '0', 10);
 
-  const [status, setStatus] = useState<BatchStatusResponse | null>(null);
+  // sessionStorageから初期ファイル一覧を取得（アップロード直後に即座に表示するため）
+  const getInitialFiles = (): import('@/types').BatchFileItem[] => {
+    if (typeof window === 'undefined') return [];
+    const stored = sessionStorage.getItem(`batch_initial_${batchId}`);
+    if (stored) {
+      sessionStorage.removeItem(`batch_initial_${batchId}`);
+      try {
+        return JSON.parse(stored);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const initialFiles = getInitialFiles();
+
+  // 初期状態: sessionStorageから取得したファイル一覧で即座にUI表示
+  const [status, setStatus] = useState<BatchStatusResponse>({
+    batch_id: batchId,
+    status: 'processing',
+    total_files: initialTotal || initialFiles.length,
+    completed: 0,
+    processing: 0,
+    needs_review: 0,
+    failed: 0,
+    queued: initialTotal || initialFiles.length,
+    progress_percent: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    files: initialFiles,
+  });
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoaded, setInitialLoaded] = useState(false);
+
   // ポーリング制御用ref
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const isPollingActive = useRef(true);
@@ -44,6 +80,7 @@ export default function BatchPage() {
       const data = await getBatchStatus(batchId);
       setStatus(data);
       setError(null);
+      setInitialLoaded(true);
 
       // 初回ロード時に最初のファイルを自動選択
       setSelectedFileId((prev) => {
@@ -56,13 +93,12 @@ export default function BatchPage() {
       return data;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'ステータスの取得に失敗しました');
+      setInitialLoaded(true);
       return null;
-    } finally {
-      setLoading(false);
     }
   }, [batchId]);
 
-  // setTimeoutチェーン方式のポーリング（リクエスト完了後に次を予約するため重複しない）
+  // setTimeoutチェーン方式のポーリング
   useEffect(() => {
     isPollingActive.current = true;
 
@@ -115,7 +151,6 @@ export default function BatchPage() {
         };
         poll();
       } else {
-        // 即座にステータス更新
         await fetchStatus();
       }
     } catch (e) {
@@ -147,22 +182,10 @@ export default function BatchPage() {
 
   // 選択中のファイル
   const selectedFile: BatchFileItem | null =
-    status?.files.find((f) => f.file_id === selectedFileId) || null;
+    status.files.find((f) => f.file_id === selectedFileId) || null;
 
-  // ローディング
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
-          <span className="text-sm text-gray-600">バッチ処理状況を読み込み中...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // エラー
-  if (error && !status) {
+  // 致命的エラー（初回取得すら失敗）
+  if (error && !initialLoaded) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="rounded-md bg-red-50 p-6 max-w-md">
@@ -179,8 +202,6 @@ export default function BatchPage() {
       </div>
     );
   }
-
-  if (!status) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -227,7 +248,11 @@ export default function BatchPage() {
               />
             ) : (
               <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex items-center justify-center h-full min-h-[400px]">
-                <p className="text-sm text-gray-400">ファイルを選択してください</p>
+                <div className="text-center">
+                  <p className="text-sm text-gray-400">
+                    左のファイル一覧からファイルを選択してください
+                  </p>
+                </div>
               </div>
             )}
           </div>

@@ -136,7 +136,7 @@ export default function BatchStatusPanel({
 
       {/* 進捗バー + ダウンロードボタン */}
       <div className="flex items-center gap-4">
-        {/* 進捗バー */}
+        {/* 進捗バー（シンプルな青一色） */}
         <div className="flex-1">
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs text-gray-500">全体進捗率</span>
@@ -148,8 +148,16 @@ export default function BatchStatusPanel({
               style={{ width: `${status.progress_percent}%` }}
             />
           </div>
-          <div className="text-xs text-gray-400 mt-1">
-            {status.completed + status.needs_review + status.failed} / {status.total_files} 件 処理完了
+          <div className="flex items-center justify-between mt-1">
+            <div className="text-xs text-gray-400">
+              {status.completed + status.needs_review + status.failed} / {status.total_files} 件 処理完了
+            </div>
+            {status.processing > 0 && (
+              <div className="flex items-center gap-1 text-xs text-blue-600">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                {status.processing}件 処理中...
+              </div>
+            )}
           </div>
         </div>
 

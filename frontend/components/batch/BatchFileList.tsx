@@ -9,9 +9,9 @@ interface BatchFileListProps {
   onSelectFile: (fileId: string) => void;
 }
 
-/** ステータスバッジ表示 */
+/** ステータスバッジ表示（アニメーション付き） */
 function StatusBadge({ status }: { status: BatchFileStatus }) {
-  const config: Record<BatchFileStatus, { label: string; className: string; icon: string }> = {
+  const config: Record<BatchFileStatus, { label: string; className: string; icon: string; animate?: boolean }> = {
     completed: {
       label: '完了',
       className: 'bg-green-100 text-green-700',
@@ -21,6 +21,7 @@ function StatusBadge({ status }: { status: BatchFileStatus }) {
       label: '処理中',
       className: 'bg-blue-100 text-blue-700',
       icon: '🔄',
+      animate: true,
     },
     queued: {
       label: '待機中',
@@ -42,17 +43,60 @@ function StatusBadge({ status }: { status: BatchFileStatus }) {
   const c = config[status];
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${c.className}`}>
-      <span aria-hidden="true">{c.icon}</span>
+      <span aria-hidden="true" className={c.animate ? 'animate-spin' : ''}>{c.icon}</span>
       {c.label}
     </span>
   );
+}
+
+/** ファイル行の進捗インジケーター（progress値に連動） */
+function FileProgressBar({ status, progress }: { status: BatchFileStatus; progress: number }) {
+  if (status === 'processing') {
+    return (
+      <div className="w-full h-1.5 bg-blue-100 rounded-full overflow-hidden mt-1">
+        <div
+          className="h-full bg-blue-500 rounded-full transition-all duration-700 ease-out"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    );
+  }
+  if (status === 'queued') {
+    return (
+      <div className="w-full h-1.5 bg-gray-100 rounded-full mt-1">
+        <div className="h-full bg-gray-300 rounded-full" style={{ width: '0%' }} />
+      </div>
+    );
+  }
+  if (status === 'completed') {
+    return (
+      <div className="w-full h-1.5 bg-green-100 rounded-full mt-1">
+        <div className="h-full bg-green-500 rounded-full transition-all duration-500" style={{ width: '100%' }} />
+      </div>
+    );
+  }
+  if (status === 'needs_review') {
+    return (
+      <div className="w-full h-1.5 bg-amber-100 rounded-full mt-1">
+        <div className="h-full bg-amber-500 rounded-full transition-all duration-500" style={{ width: '100%' }} />
+      </div>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <div className="w-full h-1.5 bg-red-100 rounded-full mt-1">
+        <div className="h-full bg-red-500 rounded-full transition-all duration-500" style={{ width: '100%' }} />
+      </div>
+    );
+  }
+  return null;
 }
 
 const ITEMS_PER_PAGE = 10;
 
 /**
  * バッチファイル一覧コンポーネント
- * 検索・ステータスフィルタ・ページネーション対応
+ * 全ファイルを最初から表示し、各ファイルのステータスがリアルタイムで変化する
  */
 export default function BatchFileList({
   files,
@@ -163,17 +207,17 @@ export default function BatchFileList({
         </select>
       </div>
 
-      {/* 「ファイル一覧」テーブル */}
+      {/* テーブル */}
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="text-center px-3 py-2 font-medium text-gray-500">No.</th>
-              <th className="text-center px-3 py-2 font-medium text-gray-500">ファイル名</th>
-              <th className="text-center px-3 py-2 font-medium text-gray-500">委託者番号</th>
-              <th className="text-center px-3 py-2 font-medium text-gray-500">契約者番号</th>
-              <th className="text-center px-3 py-2 font-medium text-gray-500">状態</th>
-              <th className="text-center px-3 py-2 font-medium text-gray-500">最終更新</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-500">No.</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-500">ファイル名</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-500">委託者番号</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-500">契約者番号</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-500">状態</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-500">最終更新</th>
             </tr>
           </thead>
           <tbody>
@@ -181,28 +225,31 @@ export default function BatchFileList({
               <tr
                 key={file.file_id}
                 onClick={() => onSelectFile(file.file_id)}
-                className={`cursor-pointer border-b border-gray-50 transition-colors ${
+                className={`cursor-pointer border-b border-gray-50 transition-all duration-300 ${
                   selectedFileId === file.file_id
                     ? 'bg-blue-50 border-l-2 border-l-blue-500'
+                    : file.status === 'processing'
+                    ? 'bg-blue-50/30 hover:bg-blue-50/60'
                     : 'hover:bg-gray-50'
                 }`}
               >
-                <td className="px-3 py-2.5 text-gray-600">
+                <td className="px-3 pt-2.5 pb-1 text-gray-600">
                   {String(file.seq_number).padStart(3, '0')}
                 </td>
-                <td className="px-3 py-2.5 text-gray-800 font-medium truncate max-w-[140px]" title={file.batch_filename}>
-                  {file.batch_filename}
+                <td className="px-3 pt-2.5 pb-1 text-gray-800 font-medium truncate max-w-[140px]" title={file.batch_filename}>
+                  <div>{file.batch_filename.includes('unknown') ? file.original_filename : file.batch_filename}</div>
+                  <FileProgressBar status={file.status} progress={file.progress} />
                 </td>
-                <td className="px-3 py-2.5 text-gray-600">
+                <td className="px-3 pt-2.5 pb-1 text-gray-600">
                   {file.consignor_number || '-'}
                 </td>
-                <td className="px-3 py-2.5 text-gray-600">
+                <td className="px-3 pt-2.5 pb-1 text-gray-600">
                   {file.contract_number || '-'}
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-3 pt-2.5 pb-1">
                   <StatusBadge status={file.status} />
                 </td>
-                <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">
+                <td className="px-3 pt-2.5 pb-1 text-gray-400 whitespace-nowrap">
                   {formatDate(file.updated_at)}
                 </td>
               </tr>
