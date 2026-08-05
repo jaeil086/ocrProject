@@ -191,7 +191,7 @@ class ClaudeClient:
         "店番号": {"value": "681", "confidence": 90},
         "振替日": {"value": "27", "confidence": 92},
         "委託者番号": {"value": "11137", "confidence": 95},
-        "契約者番号": {"value": "10115", "confidence": 88},
+        "契約者番号": {"value": "10116", "confidence": 88},
         "委託者名": {"value": "ニクークス株式会社", "confidence": 93},
         "料金等の種類": {"value": "ご利用料", "confidence": 94}
     }, ensure_ascii=False)

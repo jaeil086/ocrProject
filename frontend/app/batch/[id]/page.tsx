@@ -143,6 +143,8 @@ export default function BatchPage() {
   const handleReprocess = async (fileId: string) => {
     try {
       await reprocessFile(batchId, fileId);
+      // 再処理開始時に進捗最大値をリセット（バーが下がるのを許可する）
+      maxProgressRef.current = 0;
       // ポーリング再開（停止していた場合）
       if (!isPollingActive.current) {
         isPollingActive.current = true;

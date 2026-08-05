@@ -19,7 +19,9 @@ export default function RootLayout({
           <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
               {/* きらぼし銀行ロゴ */}
-              <img src="/logo-kiraboshi.png" alt="きらぼし銀行" height="36" className="h-9" />
+              <a href="/">
+                <img src="/logo-kiraboshi.png" alt="きらぼし銀行" height="36" className="h-9 cursor-pointer" />
+              </a>
               <div className="border-l border-gray-300 pl-4">
                 <p className="text-sm font-semibold text-gray-800">OCR口座振替依頼書処理システム</p>
                 <p className="text-xs text-gray-500">AIによる口座振替依頼書の自動データ抽出</p>
