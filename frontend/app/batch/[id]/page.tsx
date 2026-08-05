@@ -61,6 +61,8 @@ export default function BatchPage() {
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [initialLoaded, setInitialLoaded] = useState(false);
+  // 進捗率が減少しないよう最大値を保持する
+  const maxProgressRef = useRef(0);
 
   // ポーリング制御用ref
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -78,6 +80,12 @@ export default function BatchPage() {
   const fetchStatus = useCallback(async () => {
     try {
       const data = await getBatchStatus(batchId);
+      // 進捗率が減少しないよう最大値で保持する
+      if (data.progress_percent >= maxProgressRef.current) {
+        maxProgressRef.current = data.progress_percent;
+      } else {
+        data.progress_percent = maxProgressRef.current;
+      }
       setStatus(data);
       setError(null);
       setInitialLoaded(true);
@@ -175,10 +183,7 @@ export default function BatchPage() {
     }
   };
 
-  // 手動更新
-  const handleRefresh = () => {
-    fetchStatus();
-  };
+  // 手動更新は不要（自動ポーリングで充分なため削除済み）
 
   // 選択中のファイル
   const selectedFile: BatchFileItem | null =
@@ -224,7 +229,6 @@ export default function BatchPage() {
           status={status}
           onDownloadCsv={handleDownloadCsv}
           onDownloadZip={handleDownloadZip}
-          onRefresh={handleRefresh}
         />
 
         {/* 下部: ファイル一覧 + ファイル詳細 */}

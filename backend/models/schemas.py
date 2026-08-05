@@ -230,10 +230,23 @@ class BatchJob(BaseModel):
 
     @property
     def progress_percent(self) -> int:
+        """各ファイルの個別進捗を加重平均して全体進捗を算出する。
+        完了/確認必要/失敗のファイルは100%として計算し、
+        処理中/待機中のファイルはそれぞれの progress 値を使用する。
+        これにより進捗バーが段階的に増加する。"""
         if self.total_files == 0:
             return 0
-        done = self.completed_count + self.needs_review_count + self.failed_count
-        return int(done / self.total_files * 100)
+        total_progress = 0
+        for f in self.files:
+            if f.status in (
+                BatchFileStatus.COMPLETED,
+                BatchFileStatus.NEEDS_REVIEW,
+                BatchFileStatus.FAILED,
+            ):
+                total_progress += 100
+            else:
+                total_progress += f.progress
+        return int(total_progress / self.total_files)
 
 
 class BatchStatusResponse(BaseModel):

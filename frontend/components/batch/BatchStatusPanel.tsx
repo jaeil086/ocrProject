@@ -6,7 +6,6 @@ interface BatchStatusPanelProps {
   status: BatchStatusResponse;
   onDownloadCsv: () => void;
   onDownloadZip: () => void;
-  onRefresh: () => void;
 }
 
 /**
@@ -17,7 +16,6 @@ export default function BatchStatusPanel({
   status,
   onDownloadCsv,
   onDownloadZip,
-  onRefresh,
 }: BatchStatusPanelProps) {
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -40,16 +38,6 @@ export default function BatchStatusPanel({
           <span className="text-xs text-gray-400">
             最終更新: {formatDate(status.updated_at)}
           </span>
-          <button
-            onClick={onRefresh}
-            className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-            aria-label="更新"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            更新
-          </button>
         </div>
       </div>
 
@@ -144,7 +132,7 @@ export default function BatchStatusPanel({
           </div>
           <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
             <div
-              className="h-full bg-blue-600 rounded-full transition-all duration-500"
+              className="h-full bg-blue-600 rounded-full transition-all duration-1000 ease-out"
               style={{ width: `${status.progress_percent}%` }}
             />
           </div>
