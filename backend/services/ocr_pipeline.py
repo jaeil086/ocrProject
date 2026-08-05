@@ -6,6 +6,7 @@ PDF読み込み→画像前処理→Claude Sonnet 4（画像直接OCR）→Proce
 Textractは使用しない（MVP構成）。
 """
 
+import asyncio
 import logging
 import traceback
 from datetime import datetime
@@ -33,20 +34,36 @@ class OcrPipeline:
         self.image_preprocessor = ImagePreprocessor()
         self.claude_client = ClaudeClient()
 
-    async def process(self, file_id: str, pdf_bytes: bytes) -> ProcessingResult:
+    async def process(
+        self,
+        file_id: str,
+        pdf_bytes: bytes,
+        progress_callback=None,
+    ) -> ProcessingResult:
         """
         OCRパイプラインのメイン処理
 
         処理フロー:
-        1. PyMuPDF: PDF→ページ画像変換
-        2. 画像前処理（パススルー）
-        3. Claude Sonnet 4: 画像から直接OCR+フィールド抽出
-        4. ProcessingResult構築
+        1. PyMuPDF: PDF→ページ画像変換 (10%→25%)
+        2. 画像前処理（パススルー）(25%→35%)
+        3. Claude Sonnet 4: 画像から直接OCR+フィールド抽出 (35%→80%)
+        4. ProcessingResult構築 (80%→85%)
+
+        Args:
+            progress_callback: 進捗更新コールバック(progress: int) -> None
         """
+        def _update_progress(p: int):
+            if progress_callback:
+                progress_callback(p)
+
         try:
-            # Step 1: PDF読み込み
+            # Step 1: PDF読み込み（CPU集約的なためスレッドプールで実行）
             logger.info(f"[{file_id}] PDF読み込み開始")
-            page_images = self.pdf_reader.read_pages(pdf_bytes)
+            _update_progress(15)
+            page_images = await asyncio.to_thread(
+                self.pdf_reader.read_pages, pdf_bytes
+            )
+            _update_progress(25)
 
             if not page_images:
                 return self._create_error_result(
@@ -56,19 +73,26 @@ class OcrPipeline:
             # MVP: 最初のページのみ処理
             first_page_image = page_images[0]
 
-            # Step 2: 画像前処理（パススルー）
+            # Step 2: 画像前処理（CPU集約的なためスレッドプールで実行）
             logger.info(f"[{file_id}] 画像前処理開始")
-            preprocessed_image = self.image_preprocessor.preprocess(first_page_image)
+            _update_progress(30)
+            preprocessed_image = await asyncio.to_thread(
+                self.image_preprocessor.preprocess, first_page_image
+            )
+            _update_progress(35)
 
-            # Step 3: Claude Sonnet 4で画像から直接OCR+抽出
+            # Step 3: Claude Sonnet 4で画像から直接OCR+抽出（最も時間がかかる）
             logger.info(f"[{file_id}] Claude Sonnet 4 OCR開始")
+            _update_progress(40)
             claude_result = await self.claude_client.extract_fields_from_image(
                 preprocessed_image
             )
+            _update_progress(80)
 
             # Step 4: ProcessingResult構築
             logger.info(f"[{file_id}] 処理結果構築")
             document = self._build_document(file_id, claude_result)
+            _update_progress(85)
 
             return ProcessingResult(
                 document=document,

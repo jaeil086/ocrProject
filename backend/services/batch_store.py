@@ -104,6 +104,23 @@ class BatchStore:
                 file_item.logs.append(log_entry)
                 break
 
+    def update_file_progress(
+        self,
+        batch_id: str,
+        file_id: str,
+        progress: int,
+    ) -> None:
+        """ファイルの処理進捗を更新する（0〜100）"""
+        job = self._jobs.get(batch_id)
+        if not job:
+            return
+
+        for file_item in job.files:
+            if file_item.file_id == file_id:
+                file_item.progress = min(100, max(0, progress))
+                file_item.updated_at = datetime.now()
+                break
+
     def update_file_batch_filename(
         self,
         batch_id: str,

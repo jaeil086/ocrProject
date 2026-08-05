@@ -169,11 +169,11 @@ class ClaudeClient:
 
 株式会社 きらぼし銀行 御中
 収納代行会社名 1 きらぼしシステム株式会社 2 三菱UFJファクター株式会社
-フリガナ オガワ ヨシヒロ
+フリガナ オガワ アツヒロ
 氏名 小川 敦大
 ※ゆうちょ銀行以外の金融機関ご利用の場合
-三井住友銀行 国領 コード 0 0 1 9 支店 店番号 6 8 1
-預金種目 1.普通 2.当座  口座番号 4 6 0 7 2 1 2
+三井住友銀行 国領 コード 0 0 0 9 支店 店番号 6 8 1
+預金種目 1.普通 2.当座  口座番号 6 6 6 7 2 2 1
 ※ゆうちょ銀行ご利用の場合
 記号番号 3 0  払込先 口座番号 00100-3-578806 加入者 きらぼしシステム株式会社
 開始年月 2026年 9月  振替日 12日・27日
@@ -182,16 +182,16 @@ class ClaudeClient:
 
     ONE_SHOT_EXAMPLE_OUTPUT = json.dumps({
         "預金者氏名": {"value": "小川 敦大", "confidence": 90},
-        "預金者フリガナ": {"value": "オガワ ヨシヒロ", "confidence": 92},
+        "預金者フリガナ": {"value": "オガワ アツヒロ", "confidence": 92},
         "銀行名": {"value": "三井住友銀行", "confidence": 95},
         "支店名": {"value": "国領", "confidence": 93},
         "預金種目": {"value": "普通", "confidence": 95},
-        "口座番号": {"value": "4607212", "confidence": 88},
-        "銀行番号": {"value": "0019", "confidence": 90},
+        "口座番号": {"value": "6667221", "confidence": 88},
+        "銀行番号": {"value": "0009", "confidence": 90},
         "店番号": {"value": "681", "confidence": 90},
         "振替日": {"value": "27", "confidence": 92},
         "委託者番号": {"value": "11137", "confidence": 95},
-        "契約者番号": {"value": "10116", "confidence": 88},
+        "契約者番号": {"value": "10115", "confidence": 88},
         "委託者名": {"value": "ニクークス株式会社", "confidence": 93},
         "料金等の種類": {"value": "ご利用料", "confidence": 94}
     }, ensure_ascii=False)
@@ -210,11 +210,11 @@ class ClaudeClient:
         Step2: テキストから構造化フィールドを抽出（One-shot + 構造化出力）
         """
         # Step1: 全テキストOCR
-        raw_text = await self._step1_full_ocr(image_bytes)
+        raw_text = await self._step1_full_ocr(image_bytes)  #! claud 1번 호출
         logger.info(f"Step1 OCR結果（先頭300文字）: {raw_text[:300]}")
 
         # Step2: テキストからフィールド抽出
-        result = await self._step2_extract_fields(raw_text, image_bytes)
+        result = await self._step2_extract_fields(raw_text, image_bytes) #! claud 2번 호출!!
         return result
 
     @retry(

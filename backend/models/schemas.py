@@ -190,6 +190,7 @@ class BatchFileItem(BaseModel):
     consignor_number: Optional[str] = None  # 委託者番号
     contract_number: Optional[str] = None  # 契約者番号
     status: BatchFileStatus = BatchFileStatus.QUEUED
+    progress: int = 0  # 処理進捗（0〜100）
     error_message: Optional[str] = None
     processing_started_at: Optional[datetime] = None
     processing_completed_at: Optional[datetime] = None
@@ -258,3 +259,4 @@ class BatchUploadResponse(BaseModel):
     batch_id: str
     total_files: int
     message: str
+    files: list[BatchFileItem] = []  # アップロード直後のファイル一覧（全件queued状態）

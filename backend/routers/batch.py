@@ -16,7 +16,7 @@ import uuid
 import zipfile
 
 import pandas as pd
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from backend.models.enums import (
@@ -54,6 +54,7 @@ _ocr_pipeline = OcrPipeline()
 MAX_BATCH_FILES = 100
 # 並行処理数（Bedrock APIレート制限を考慮）
 CONCURRENT_LIMIT = 3
+# CONCURRENT_LIMIT = 1
 
 
 def _generate_file_id() -> str:
@@ -118,15 +119,28 @@ async def _process_single_file(
 ) -> None:
     """単一ファイルのOCR処理を実行する（バックグラウンドタスク用）"""
     try:
-        # ステータスを処理中に更新
+        # ステータスを処理中に更新（progress: 5%）
         batch_store.update_file_status(
             batch_id, file_id, BatchFileStatus.PROCESSING
         )
+        batch_store.update_file_progress(batch_id, file_id, 5)
         batch_store.add_file_log(batch_id, file_id, "OCR処理開始")
 
-        # OCRパイプライン実行
+        # イベントループに制御を戻す（ポーリング応答を可能にする）
+        await asyncio.sleep(0)
+
+        # progress: 10% — PDF読み込み開始
+        batch_store.update_file_progress(batch_id, file_id, 10)
+
+        # OCRパイプライン実行（内部でステップごとにprogressを更新）
         batch_store.add_file_log(batch_id, file_id, "Claude Sonnet 4 OCR実行中")
-        processing_result = await _ocr_pipeline.process(file_id, pdf_bytes)
+        processing_result = await _ocr_pipeline.process(
+            file_id, pdf_bytes,
+            progress_callback=lambda p: batch_store.update_file_progress(batch_id, file_id, p),
+        )
+
+        # イベントループに制御を戻す
+        await asyncio.sleep(0)
 
         document = processing_result.document
         # original_filenameを復元（store内のファイルアイテムから取得）
@@ -152,7 +166,8 @@ async def _process_single_file(
             )
             return
 
-        # バリデーション実行
+        # バリデーション実行（progress: 85%）
+        batch_store.update_file_progress(batch_id, file_id, 85)
         batch_store.add_file_log(batch_id, file_id, "バリデーション実行中")
         if document.form_type:
             missing_errors = _validator.check_missing_fields(
@@ -187,7 +202,8 @@ async def _process_single_file(
         else:
             batch_file_status = BatchFileStatus.COMPLETED
 
-        # 委託者番号・契約者番号を取得してバッチファイル名を更新
+        # 委託者番号・契約者番号を取得してバッチファイル名を更新（progress: 95%）
+        batch_store.update_file_progress(batch_id, file_id, 95)
         consignor = document.consignor_number or ""
         contract = document.contract_number or ""
 
@@ -198,6 +214,9 @@ async def _process_single_file(
             consignor_number=consignor or None,
             contract_number=contract or None,
         )
+
+        # 完了（progress: 100%）
+        batch_store.update_file_progress(batch_id, file_id, 100)
 
         # バッチファイル名を更新（OCR結果から番号が判明した場合）
         if file_item and (consignor or contract):
@@ -232,12 +251,17 @@ async def _process_batch(
     batch_id: str, file_data_list: list[tuple[str, bytes]]
 ) -> None:
     """バッチ全体の処理を実行する（セマフォで並行数制限）"""
+    # 最初のポーリングリクエストが先に処理されるよう、少し待つ
+    await asyncio.sleep(0.1)
+
     batch_store.start_processing(batch_id)
 
     semaphore = asyncio.Semaphore(CONCURRENT_LIMIT)
 
     async def process_with_limit(file_id: str, pdf_bytes: bytes) -> None:
         async with semaphore:
+            # 各ファイル処理前にイベントループに制御を戻す
+            await asyncio.sleep(0)
             await _process_single_file(batch_id, file_id, pdf_bytes)
 
     # 全ファイルの並行処理を起動
@@ -253,7 +277,6 @@ async def _process_batch(
 
 @router.post("/upload", response_model=BatchUploadResponse)
 async def batch_upload(
-    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
 ):
     """複数PDFファイルの一括アップロード + バックグラウンド処理開始"""
@@ -286,8 +309,9 @@ async def batch_upload(
         original_filename = file.filename or "unknown.pdf"
         pdf_bytes = await file.read()
 
-        # 仮のバッチファイル名（OCR処理後に番号が判明したら更新される）
-        batch_filename = _generate_batch_filename(seq, "unknown", "unknown")
+        # 初期バッチファイル名: 連番 + 元ファイル名（OCR処理後に正式名に更新される）
+        seq_str = str(seq).zfill(3)
+        batch_filename = f"{seq_str}_{original_filename}"
 
         file_item = BatchFileItem(
             file_id=file_id,
@@ -303,17 +327,25 @@ async def batch_upload(
         )
         file_data_list.append((file_id, pdf_bytes))
 
-    # バックグラウンドでOCR処理を開始
-    background_tasks.add_task(_process_batch, batch_id, file_data_list)
+    # バックグラウンドでOCR処理を開始（asyncio.create_taskで即時起動）
+    # BackgroundTasksはレスポンス送信完了後に実行されるため、
+    # ポーリングリクエストへの応答がブロックされる場合がある。
+    # create_taskを使うことでレスポンス送信前にタスクを起動し、
+    # ポーリング応答との並行実行を可能にする。
+    asyncio.create_task(_process_batch(batch_id, file_data_list))
 
     logger.info(
         f"[バッチ {batch_id}] アップロード完了: {len(files)}件、バックグラウンド処理開始"
     )
 
+    # バッチジョブ内のファイル一覧を取得（レスポンスに含める）
+    job = batch_store.get_job(batch_id)
+
     return BatchUploadResponse(
         batch_id=batch_id,
         total_files=len(files),
         message=f"{len(files)}件のファイルをアップロードしました。バックグラウンドで処理を開始します。",
+        files=job.files if job else [],
     )
 
 
@@ -344,7 +376,6 @@ async def get_batch_status(batch_id: str):
 async def reprocess_file(
     batch_id: str,
     file_id: str,
-    background_tasks: BackgroundTasks,
 ):
     """個別ファイルの再処理を実行する"""
     job = batch_store.get_job(batch_id)
@@ -379,10 +410,8 @@ async def reprocess_file(
     # ジョブステータスを処理中に
     batch_store.start_processing(batch_id)
 
-    # バックグラウンドで再処理実行
-    background_tasks.add_task(
-        _process_single_file, batch_id, file_id, pdf_bytes
-    )
+    # バックグラウンドで再処理実行（create_taskで即時起動）
+    asyncio.create_task(_process_single_file(batch_id, file_id, pdf_bytes))
 
     return {
         "message": "再処理を開始しました",
