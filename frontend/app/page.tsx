@@ -97,10 +97,19 @@ export default function UploadPage() {
         {/* 選択済みファイル一覧 */}
         {selectedFiles.length > 0 && !isUploading && !results && (
           <div className="w-full max-w-lg mx-auto mt-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">
-              選択済みファイル（{selectedFiles.length}件）
-            </h3>
-            <ul className="space-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-700">
+                選択済みファイル（{selectedFiles.length}件）
+              </h3>
+              <button
+                onClick={() => setSelectedFiles([])}
+                className="text-xs text-gray-400 hover:text-red-500 transition-colors duration-150"
+                aria-label="すべて削除"
+              >
+                すべて削除
+              </button>
+            </div>
+            <ul className="space-y-1 max-h-[440px] overflow-y-auto pr-1">
               {selectedFiles.map((file, index) => (
                 <li
                   key={`${file.name}-${file.size}-${index}`}
@@ -131,6 +140,11 @@ export default function UploadPage() {
                 </li>
               ))}
             </ul>
+            {selectedFiles.length > 10 && (
+              <p className="text-center text-xs text-gray-400 mt-1">
+                ↕ スクロールで全件を確認
+              </p>
+            )}
 
             <button
               onClick={handleUpload}
