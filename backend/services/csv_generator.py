@@ -132,12 +132,21 @@ class CsvGenerator:
         """ドキュメントからCSV行データを構築（check-results形式）"""
         field_map = {f.field_name: f for f in document.fields}
 
+        # Excelで先頭0が消えないよう数値フィールドを保護するフィールド一覧
+        NUMERIC_PRESERVE_FIELDS = {
+            "口座番号", "銀行番号", "店番号", "委託者番号", "契約者番号",
+        }
+
         def get_value(name: str) -> str:
             """フィールド値を取得（修正値優先）"""
             field = field_map.get(name)
             if field is None:
                 return ""
-            return field.corrected_value or field.value or ""
+            value = field.corrected_value or field.value or ""
+            # 数値フィールドの先頭0を保持するためExcel数式形式で出力
+            if value and name in NUMERIC_PRESERVE_FIELDS:
+                return f'="{value}"'
+            return value
 
         def get_check(name: str) -> str:
             """
