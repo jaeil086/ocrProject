@@ -39,6 +39,8 @@ CSV_COLUMNS = [
     "口座番号",
     "銀行番号",
     "店番号",
+    "ゆうちょ記号",
+    "ゆうちょ番号",
     "振替日",
     "委託者番号",
     "契約者番号",
@@ -54,6 +56,8 @@ CSV_COLUMNS = [
     "口座番号_チェック",
     "銀行番号_チェック",
     "店番号_チェック",
+    "ゆうちょ記号_チェック",
+    "ゆうちょ番号_チェック",
     "振替日_チェック",
     "委託者番号_チェック",
     "契約者番号_チェック",
@@ -72,6 +76,8 @@ CHECK_FIELDS = [
     "口座番号",
     "銀行番号",
     "店番号",
+    "ゆうちょ記号",
+    "ゆうちょ番号",
     "振替日",
     "委託者番号",
     "契約者番号",
@@ -146,6 +152,7 @@ class CsvGenerator:
         # Excelで先頭0が消えないよう数値フィールドを保護するフィールド一覧
         NUMERIC_PRESERVE_FIELDS = {
             "口座番号", "銀行番号", "店番号", "委託者番号", "契約者番号",
+            "ゆうちょ記号", "ゆうちょ番号",
         }
 
         def get_value(name: str) -> str:
@@ -167,6 +174,9 @@ class CsvGenerator:
             フィールドのチェック結果を返す
             - お届出印金融機関: 「あり」→OK、それ以外→NG
             - 銀行名: 「（x）」を含む場合→NG（種別未選択）
+            - 銀行関連フィールド（銀行名〜店番号）とゆうちょ関連（ゆうちょ記号・番号）は排他:
+              ゆうちょ側に記入がある場合、銀行側が空欄なのは正常（"-"を返す）
+              銀行側に記入がある場合、ゆうちょ側が空欄なのは正常（"-"を返す）
             - 値が正常に取得できている場合: "OK"
             - 値がない場合: "NG"
             - Confidence低い場合: "要確認"
@@ -177,6 +187,30 @@ class CsvGenerator:
                 if field and field.value == "あり":
                     return "OK"
                 return "NG"
+
+            # 銀行系フィールドとゆうちょ系フィールドの排他判定
+            bank_fields = {"銀行名", "支店名", "預金種目", "口座番号", "銀行番号", "店番号"}
+            yucho_fields = {"ゆうちょ記号", "ゆうちょ番号"}
+
+            # ゆうちょ側に値があるか判定
+            has_yucho = any(
+                (f := field_map.get(fn)) and f.value
+                for fn in yucho_fields
+            )
+            # 銀行側に値があるか判定
+            has_bank = any(
+                (f := field_map.get(fn)) and f.value
+                for fn in bank_fields
+            )
+
+            # 排他判定: 相手側に記入があり自分側が空欄の場合は正常（"-"）
+            if name in bank_fields:
+                if (field is None or not field.value) and has_yucho:
+                    return "-"
+            if name in yucho_fields:
+                if (field is None or not field.value) and has_bank:
+                    return "-"
+
             # 銀行名は「（x）」を含む場合NG（種別未選択）
             if name == "銀行名":
                 if field is None or not field.value:
@@ -208,6 +242,8 @@ class CsvGenerator:
             "口座番号": get_value("口座番号"),
             "銀行番号": get_value("銀行番号"),
             "店番号": get_value("店番号"),
+            "ゆうちょ記号": get_value("ゆうちょ記号"),
+            "ゆうちょ番号": get_value("ゆうちょ番号"),
             "振替日": get_value("振替日"),
             "委託者番号": get_value("委託者番号"),
             "契約者番号": get_value("契約者番号"),
@@ -223,6 +259,8 @@ class CsvGenerator:
             "口座番号_チェック": get_check("口座番号"),
             "銀行番号_チェック": get_check("銀行番号"),
             "店番号_チェック": get_check("店番号"),
+            "ゆうちょ記号_チェック": get_check("ゆうちょ記号"),
+            "ゆうちょ番号_チェック": get_check("ゆうちょ番号"),
             "振替日_チェック": get_check("振替日"),
             "委託者番号_チェック": get_check("委託者番号"),
             "契約者番号_チェック": get_check("契約者番号"),

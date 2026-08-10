@@ -13,7 +13,7 @@ interface BatchFileDetailProps {
 type TabId = 'preview_ocr' | 'log';
 
 /** チェック結果インラインバッジ */
-function InlineCheckBadge({ field }: { field: OcrField }) {
+function InlineCheckBadge({ field, allFields }: { field: OcrField; allFields?: OcrField[] }) {
   // お届出印金融機関は「あり」/「なし」で判定
   if (field.field_name === 'お届出印金融機関') {
     if (field.value === 'あり') {
@@ -28,6 +28,35 @@ function InlineCheckBadge({ field }: { field: OcrField }) {
         NG
       </span>
     );
+  }
+
+  // 銀行系フィールドとゆうちょ系フィールドの排他判定
+  const bankFieldNames = ['銀行名', '支店名', '預金種目', '口座番号', '銀行番号', '店番号'];
+  const yuchoFieldNames = ['ゆうちょ記号', 'ゆうちょ番号'];
+
+  if (!field.value && allFields) {
+    const hasYucho = yuchoFieldNames.some(
+      (fn) => allFields.find((f) => f.field_name === fn)?.value
+    );
+    const hasBank = bankFieldNames.some(
+      (fn) => allFields.find((f) => f.field_name === fn)?.value
+    );
+
+    // 排他: 相手側に記入があり自分側が空欄 → 正常（「-」表示）
+    if (bankFieldNames.includes(field.field_name) && hasYucho) {
+      return (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
+          -
+        </span>
+      );
+    }
+    if (yuchoFieldNames.includes(field.field_name) && hasBank) {
+      return (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
+          -
+        </span>
+      );
+    }
   }
 
   if (!field.value) {
@@ -47,8 +76,13 @@ function InlineCheckBadge({ field }: { field: OcrField }) {
   }
   if (field.confidence_level === 'low') {
     return (
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-600">
-        確認必要
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-600">
+          確認必要
+        </span>
+        <span className="text-[10px] text-amber-500">
+          {Math.round(field.confidence_score)}%
+        </span>
       </span>
     );
   }
@@ -126,6 +160,8 @@ export default function BatchFileDetail({
     '口座番号',
     '銀行番号',
     '店番号',
+    'ゆうちょ記号',
+    'ゆうちょ番号',
     '振替日',
     '委託者番号',
     '契約者番号',
@@ -207,7 +243,9 @@ export default function BatchFileDetail({
                 </div>
               ) : document ? (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-600 mb-4">OCR抽出結果（主要項目）</h4>
+                  <div className="flex items-center gap-2 mb-4">
+                    <h4 className="text-xs font-semibold text-gray-600">OCR抽出結果（主要項目）</h4>
+                  </div>
                   <div className="space-y-0">
                     {mainFields.map((fieldName) => {
                       const field = document.fields.find((f) => f.field_name === fieldName);
@@ -218,7 +256,7 @@ export default function BatchFileDetail({
                           <span className="w-28 text-gray-500 flex-shrink-0">{fieldName}</span>
                           {/* チェック結果バッジ */}
                           <span className="flex-shrink-0">
-                            {field ? <InlineCheckBadge field={field} /> : (
+                            {field ? <InlineCheckBadge field={field} allFields={document.fields} /> : (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
                                 -
                               </span>

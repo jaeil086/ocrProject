@@ -183,12 +183,17 @@ class OcrPipeline:
         )
 
     def _apply_confidence_level(self, field: OcrField) -> OcrField:
-        """ConfidenceLevel判定"""
-        confidence_level = (
-            ConfidenceLevel.HIGH
-            if field.confidence_score >= CONFIDENCE_THRESHOLD
-            else ConfidenceLevel.LOW
-        )
+        """ConfidenceLevel判定
+        値がnull（空欄）のフィールドはconfidence判定不要（空欄は正常なのでHIGH扱い）
+        """
+        if not field.value:
+            confidence_level = ConfidenceLevel.HIGH
+        else:
+            confidence_level = (
+                ConfidenceLevel.HIGH
+                if field.confidence_score >= CONFIDENCE_THRESHOLD
+                else ConfidenceLevel.LOW
+            )
 
         return OcrField(
             field_name=field.field_name,

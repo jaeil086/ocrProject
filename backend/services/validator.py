@@ -33,11 +33,29 @@ class Validator:
                 message="届出印が押印されていません",
             ))
 
+        # ゆうちょ銀行利用判定（記号or番号に値があればゆうちょ利用）
+        has_yucho = any(
+            (f := field_map.get(fn)) and f.value
+            for fn in ("ゆうちょ記号", "ゆうちょ番号")
+        )
+        # 銀行側利用判定
+        has_bank = any(
+            (f := field_map.get(fn)) and f.value
+            for fn in ("銀行名", "支店名", "口座番号")
+        )
+
         # null（読み取り不可）フィールドをエラーとする
-        required_fields = [
-            "預金者フリガナ", "預金者氏名", "口座番号",
-            "銀行番号", "店番号", "契約者番号"
-        ]
+        # 基本の必須フィールド
+        required_fields = ["預金者フリガナ", "預金者氏名", "契約者番号"]
+
+        # 銀行系フィールドはゆうちょ利用時は必須としない
+        if not has_yucho:
+            required_fields.extend(["口座番号", "銀行番号", "店番号"])
+
+        # ゆうちょ系フィールドは銀行利用時は必須としない
+        if not has_bank:
+            required_fields.extend(["ゆうちょ記号", "ゆうちょ番号"])
+
         for name in required_fields:
             field = field_map.get(name)
             if not field or not field.value:

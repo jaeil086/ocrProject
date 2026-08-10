@@ -172,7 +172,7 @@ class TestCsvGeneratorGenerate:
 
         # 全チェックカラムが存在すること
         check_columns = [c for c in df.columns if c.endswith("_チェック")]
-        assert len(check_columns) == 14
+        assert len(check_columns) == 16
 
         # HIGHのフィールドは全て"OK"
         assert df.iloc[0]["預金者氏名_チェック"] == "OK"

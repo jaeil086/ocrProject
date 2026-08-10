@@ -503,6 +503,7 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
     # Excelで先頭0が消えないよう数値フィールドを保護するフィールド一覧
     NUMERIC_PRESERVE_FIELDS = {
         "口座番号", "銀行番号", "店番号", "委託者番号", "契約者番号",
+        "ゆうちょ記号", "ゆうちょ番号",
     }
 
     def get_value(name: str) -> str:
@@ -525,6 +526,30 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
             if field and field.value == "あり":
                 return "OK"
             return "NG"
+
+        # 銀行系フィールドとゆうちょ系フィールドの排他判定
+        bank_fields = {"銀行名", "支店名", "預金種目", "口座番号", "銀行番号", "店番号"}
+        yucho_fields = {"ゆうちょ記号", "ゆうちょ番号"}
+
+        # ゆうちょ側に値があるか判定
+        has_yucho = any(
+            (f := field_map.get(fn)) and f.value
+            for fn in yucho_fields
+        )
+        # 銀行側に値があるか判定
+        has_bank = any(
+            (f := field_map.get(fn)) and f.value
+            for fn in bank_fields
+        )
+
+        # 排他判定: 相手側に記入があり自分側が空欄の場合は正常（"-"）
+        if name in bank_fields:
+            if (field is None or not field.value) and has_yucho:
+                return "-"
+        if name in yucho_fields:
+            if (field is None or not field.value) and has_bank:
+                return "-"
+
         # 銀行名は「（x）」を含む場合NG（種別未選択）
         if name == "銀行名":
             if field is None or not field.value:
@@ -554,6 +579,8 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
         "口座番号": get_value("口座番号"),
         "銀行番号": get_value("銀行番号"),
         "店番号": get_value("店番号"),
+        "ゆうちょ記号": get_value("ゆうちょ記号"),
+        "ゆうちょ番号": get_value("ゆうちょ番号"),
         "振替日": get_value("振替日"),
         "委託者番号": get_value("委託者番号"),
         "契約者番号": get_value("契約者番号"),
@@ -568,6 +595,8 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
         "口座番号_チェック": get_check("口座番号"),
         "銀行番号_チェック": get_check("銀行番号"),
         "店番号_チェック": get_check("店番号"),
+        "ゆうちょ記号_チェック": get_check("ゆうちょ記号"),
+        "ゆうちょ番号_チェック": get_check("ゆうちょ番号"),
         "振替日_チェック": get_check("振替日"),
         "委託者番号_チェック": get_check("委託者番号"),
         "契約者番号_チェック": get_check("契約者番号"),

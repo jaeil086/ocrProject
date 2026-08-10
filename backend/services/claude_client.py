@@ -125,6 +125,24 @@ class ClaudeClient:
                 "required": ["value", "confidence"],
                 "additionalProperties": False
             },
+            "ゆうちょ記号": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
+            "ゆうちょ番号": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "null"]},
+                    "confidence": {"type": "integer"}
+                },
+                "required": ["value", "confidence"],
+                "additionalProperties": False
+            },
             "振替日": {
                 "type": "object",
                 "properties": {
@@ -174,6 +192,7 @@ class ClaudeClient:
         "required": [
             "預金者氏名", "預金者フリガナ", "お届出印金融機関", "銀行名", "支店名",
             "預金種目", "口座番号", "銀行番号", "店番号",
+            "ゆうちょ記号", "ゆうちょ番号",
             "振替日", "委託者番号", "契約者番号", "委託者名", "料金等の種類"
         ],
         "additionalProperties": False
@@ -191,6 +210,8 @@ class ClaudeClient:
         "口座番号": {"value": "6667221", "confidence": 88},
         "銀行番号": {"value": None, "confidence": 0},
         "店番号": {"value": "681", "confidence": 90},
+        "ゆうちょ記号": {"value": None, "confidence": 0},
+        "ゆうちょ番号": {"value": None, "confidence": 0},
         "振替日": {"value": "27", "confidence": 92},
         "委託者番号": {"value": "11137", "confidence": 95},
         "契約者番号": {"value": "10116", "confidence": 88},
@@ -332,11 +353,22 @@ class ClaudeClient:
 7. 口座番号: マス目の7桁数字（左→右、1マス=1桁）
 8. 銀行番号: 金融機関コード4桁（先頭0含む、例: "0137"）。マス目が空欄ならnull。
 9. 店番号: 支店コード3桁（先頭0含む、例: "207"）。マス目が空欄ならnull。
-10. 振替日: 12日・27日のうち〇が付いた方の数字のみ（例: "27"）
-11. 委託者番号: 下部マス目の前半5桁
-12. 契約者番号: 同マス目の後半5桁
-13. 委託者名: 下部「委託者名」欄の会社名
-14. 料金等の種類: 「料金等の種類」欄の内容
+10. ゆうちょ記号: 「※ゆうちょ銀行ご利用の場合」欄の「記号」フィールド（5桁数字）。
+    契約種別コードの右側にある5桁の数字。マス目が空欄ならnull。
+11. ゆうちょ番号: 「※ゆうちょ銀行ご利用の場合」欄の「番号」フィールド（最大8桁数字）。
+    記号の右側にある数字。マス目が空欄ならnull。
+12. 振替日: 12日・27日のうち〇が付いた方の数字のみ（例: "27"）
+13. 委託者番号: 下部マス目の前半5桁
+14. 契約者番号: 同マス目の後半5桁
+15. 委託者名: 下部「委託者名」欄の会社名
+16. 料金等の種類: 「料金等の種類」欄の内容
+
+【銀行情報の読み取り方針】
+★ この帳票には「※ゆうちょ銀行以外の金融機関ご利用の場合」と「※ゆうちょ銀行ご利用の場合」の2つの欄がある。
+★ どちらか一方に記入がある（稀に両方に一部記入がある場合もある）。
+★ 「ゆうちょ銀行以外」欄に記入がある場合: 銀行名・支店名・預金種目・口座番号・銀行番号・店番号を抽出。ゆうちょ記号・ゆうちょ番号はnull。
+★ 「ゆうちょ銀行」欄に記入がある場合: ゆうちょ記号・ゆうちょ番号を抽出。銀行名・支店名・預金種目・口座番号・銀行番号・店番号はnull。
+★ 両方に記入がある場合: 見えるものをすべて抽出する。
 
 【最重要ルール — 空欄判定】
 ★ マス目・記入欄に何も書かれていない場合は、必ず null を返すこと。
@@ -391,10 +423,14 @@ class ClaudeClient:
             value = field_data.get("value")
             confidence = float(field_data.get("confidence", 90))
 
-            confidence_level = (
-                ConfidenceLevel.HIGH if confidence >= CONFIDENCE_THRESHOLD
-                else ConfidenceLevel.LOW
-            )
+            # 値がnull（空欄）の場合はconfidence判定不要（空欄は正常なのでHIGH扱い）
+            if not value:
+                confidence_level = ConfidenceLevel.HIGH
+            else:
+                confidence_level = (
+                    ConfidenceLevel.HIGH if confidence >= CONFIDENCE_THRESHOLD
+                    else ConfidenceLevel.LOW
+                )
             extracted_fields.append(OcrField(
                 field_name=field_name,
                 value=value if value else None,
