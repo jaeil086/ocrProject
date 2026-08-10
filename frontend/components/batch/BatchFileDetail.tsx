@@ -151,16 +151,26 @@ export default function BatchFileDetail({
           <div className="grid grid-cols-1 xl:grid-cols-2 h-full min-h-[500px]">
             {/* 左側: PDFプレビュー */}
             <div className="border-r border-gray-200 h-full min-h-[500px]">
-              {file.status === 'queued' ? (
-                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                  処理待ちです
-                </div>
-              ) : (
+              {file.status === 'completed' || file.status === 'needs_review' ? (
                 <iframe
+                  key={`${file.file_id}-${file.status}`}
                   src={`/api/result/${file.file_id}/pdf-preview`}
                   className="w-full h-full min-h-[500px]"
                   title="PDFプレビュー"
                 />
+              ) : file.status === 'processing' ? (
+                <div className="flex flex-col items-center justify-center h-full gap-3">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+                  <span className="text-sm text-gray-400">OCR処理中...</span>
+                </div>
+              ) : file.status === 'failed' ? (
+                <div className="flex items-center justify-center h-full text-red-400 text-sm">
+                  処理に失敗しました
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                  処理待ちです
+                </div>
               )}
             </div>
 

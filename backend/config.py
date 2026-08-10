@@ -37,3 +37,10 @@ BEDROCK_RETRY_MAX_WAIT: int = 15
 # === Claude プロンプト設定  / 'max_tokens': 1024  === 
 # CLAUDE_MAX_TOKENS: int = 8192  
 CLAUDE_MAX_TOKENS: int = 1024  
+
+
+# === S3 PREFIX ===
+S3_BUCKET_NAME = "cheiru-ocr-storage"
+S3_INPUT_PREFIX = "00_input"
+S3_OUTPUT_PREFIX = "01_output"
+S3_ARCHIVE_PREFIX = "02_archive"

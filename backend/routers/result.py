@@ -119,10 +119,6 @@ async def download_csv(file_id: str):
 @router.get("/result/{file_id}/pdf-preview")
 async def preview_pdf(file_id: str):
     """PDFプレビュー表示用エンドポイント（inline表示）"""
-    document = store.get(file_id)
-    if not document:
-        raise HTTPException(status_code=404, detail="結果が見つかりません")
-
     pdf_bytes = store.get_pdf(file_id)
     if not pdf_bytes:
         raise HTTPException(status_code=404, detail="PDFファイルが見つかりません")
