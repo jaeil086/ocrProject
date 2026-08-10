@@ -3,11 +3,16 @@ OCRパイプラインオーケストレーション
 
 PDF読み込み→画像前処理→Claude Sonnet 4（画像直接OCR）→ProcessingResult
 の一連のパイプラインを管理する。
-Textractは使用しない（MVP構成）。
+
+パフォーマンス最適化:
+  - 各処理段階の所要時間を計測ログとして出力
+  - CPU集約的処理はasyncio.to_threadでスレッドプール実行
+  - Claude API呼び出しは1回のみ（1段階統合方式）
 """
 
 import asyncio
 import logging
+import time
 import traceback
 from datetime import datetime
 
@@ -45,7 +50,7 @@ class OcrPipeline:
 
         処理フロー:
         1. PyMuPDF: PDF→ページ画像変換 (10%→25%)
-        2. 画像前処理（パススルー）(25%→35%)
+        2. 画像前処理（サイズ圧縮） (25%→35%)
         3. Claude Sonnet 4: 画像から直接OCR+フィールド抽出 (35%→80%)
         4. ProcessingResult構築 (80%→85%)
 
@@ -56,12 +61,23 @@ class OcrPipeline:
             if progress_callback:
                 progress_callback(p)
 
+        pipeline_start = time.perf_counter()
+
         try:
             # Step 1: PDF読み込み（CPU集約的なためスレッドプールで実行）
-            logger.info(f"[{file_id}] PDF読み込み開始")
+            logger.info(f"[{file_id}] PDF読み込み開始 (入力サイズ: {len(pdf_bytes)/1024:.0f}KB)")
             _update_progress(15)
+
+            t0 = time.perf_counter()
             page_images = await asyncio.to_thread(
                 self.pdf_reader.read_pages, pdf_bytes
+            )
+            t_pdf = time.perf_counter() - t0
+            logger.info(
+                f"[{file_id}] PDF読み込み完了: {t_pdf:.2f}秒, "
+                f"ページ数={len(page_images)}, "
+                f"1ページ目サイズ={len(page_images[0])/1024:.0f}KB"
+                if page_images else f"[{file_id}] PDF読み込み完了: {t_pdf:.2f}秒, ページなし"
             )
             _update_progress(25)
 
@@ -74,18 +90,32 @@ class OcrPipeline:
             first_page_image = page_images[0]
 
             # Step 2: 画像前処理（CPU集約的なためスレッドプールで実行）
-            logger.info(f"[{file_id}] 画像前処理開始")
+            logger.info(f"[{file_id}] 画像前処理開始 (入力サイズ: {len(first_page_image)/1024:.0f}KB)")
             _update_progress(30)
+
+            t1 = time.perf_counter()
             preprocessed_image = await asyncio.to_thread(
                 self.image_preprocessor.preprocess, first_page_image
             )
+            t_preprocess = time.perf_counter() - t1
+            logger.info(
+                f"[{file_id}] 画像前処理完了: {t_preprocess:.2f}秒, "
+                f"出力サイズ={len(preprocessed_image)/1024:.0f}KB"
+            )
             _update_progress(35)
 
-            # Step 3: Claude Sonnet 4で画像から直接OCR+抽出（最も時間がかかる）
-            logger.info(f"[{file_id}] Claude Sonnet 4 OCR開始")
+            # Step 3: Claude Sonnet 4で画像から直接OCR+抽出（1回のAPI呼び出し）
+            logger.info(f"[{file_id}] Claude Sonnet 4 OCR開始 (画像サイズ: {len(preprocessed_image)/1024:.0f}KB)")
             _update_progress(40)
+
+            t2 = time.perf_counter()
             claude_result = await self.claude_client.extract_fields_from_image(
                 preprocessed_image
+            )
+            t_claude = time.perf_counter() - t2
+            logger.info(
+                f"[{file_id}] Claude OCR完了: {t_claude:.2f}秒, "
+                f"抽出フィールド数={len(claude_result.extracted_fields)}"
             )
             _update_progress(80)
 
@@ -94,6 +124,13 @@ class OcrPipeline:
             document = self._build_document(file_id, claude_result)
             _update_progress(85)
 
+            # パイプライン全体の計測ログ
+            total_time = time.perf_counter() - pipeline_start
+            logger.info(
+                f"[{file_id}] パイプライン完了: 合計{total_time:.2f}秒 "
+                f"(PDF:{t_pdf:.2f}s + 前処理:{t_preprocess:.2f}s + Claude:{t_claude:.2f}s)"
+            )
+
             return ProcessingResult(
                 document=document,
                 success=True,
@@ -101,8 +138,9 @@ class OcrPipeline:
             )
 
         except Exception as e:
+            total_time = time.perf_counter() - pipeline_start
             logger.error(
-                f"[{file_id}] OCRパイプライン処理中にエラー: "
+                f"[{file_id}] OCRパイプライン処理中にエラー ({total_time:.2f}秒経過): "
                 f"{type(e).__name__}: {e}"
             )
             logger.error(

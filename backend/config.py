@@ -26,7 +26,8 @@ BEDROCK_INFERENCE_PROFILE_ID: str = "jp.anthropic.claude-sonnet-4-6"
 MAX_FILE_SIZE_BYTES: int = 50 * 1024 * 1024
 
 # === PDF処理設定 ===
-PDF_RENDER_DPI: int = 600
+# 300dpiで十分なOCR精度を確保しつつ、画像サイズを大幅に削減（600dpi比で1/4）
+PDF_RENDER_DPI: int = 300
 
 # === リトライ設定 ===
 BEDROCK_MAX_RETRIES: int = 3
@@ -34,4 +35,5 @@ BEDROCK_RETRY_MIN_WAIT: int = 2
 BEDROCK_RETRY_MAX_WAIT: int = 15
 
 # === Claude プロンプト設定  / 'max_tokens': 1024  === 
-CLAUDE_MAX_TOKENS: int = 8192  
+# CLAUDE_MAX_TOKENS: int = 8192  
+CLAUDE_MAX_TOKENS: int = 1024  
