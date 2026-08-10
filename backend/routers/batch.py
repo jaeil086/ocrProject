@@ -16,7 +16,6 @@ import uuid
 from datetime import datetime
 import zipfile
 
-import pandas as pd
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
@@ -423,12 +422,12 @@ async def reprocess_file(
 
 @router.get("/{batch_id}/download/csv")
 async def download_batch_csv(batch_id: str):
-    """全体結果CSVダウンロード（全ファイルの結果を1つのCSVに出力）"""
+    """全体結果Excelダウンロード（全ファイルの結果を1つのxlsxに出力、チェック項目色分け付き）"""
     job = batch_store.get_job(batch_id)
     if not job:
         raise HTTPException(status_code=404, detail="バッチジョブが見つかりません")
 
-    # 完了・確認必要のファイルからCSVデータを集約
+    # 完了・確認必要のファイルからデータを集約
     rows = []
     for file_item in job.files:
         if file_item.status in (
@@ -445,23 +444,16 @@ async def download_batch_csv(batch_id: str):
             detail="ダウンロード可能な処理結果がまだありません",
         )
 
-    # pandas DataFrameでCSV生成
-    from backend.services.csv_generator import CSV_COLUMNS
+    # Excel形式（xlsx）で出力（チェック項目色分け付き）
+    excel_bytes = _csv_generator.generate_excel(rows)
+    buffer = io.BytesIO(excel_bytes)
 
-    df = pd.DataFrame(rows, columns=CSV_COLUMNS)
-
-    buffer = io.BytesIO()
-    # UTF-8 BOM付きで出力（Excel互換）
-    buffer.write(b"\xef\xbb\xbf")
-    df.to_csv(buffer, index=False, encoding="utf-8", mode="a")
-    buffer.seek(0)
-
-    filename = f"OCR_BATCH_RESULT_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"OCR_BATCH_RESULT_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     encoded_filename = urllib.parse.quote(filename)
 
     return StreamingResponse(
         buffer,
-        media_type="text/csv; charset=utf-8",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
         },
@@ -518,6 +510,9 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
         if field is None:
             return ""
         value = field.corrected_value or field.value or ""
+        # お届出印金融機関は「あり」→OK、「なし」→NGに変換
+        if name == "お届出印金融機関":
+            return "OK" if value == "あり" else "NG"
         # 数値フィールドの先頭0を保持するためExcel数式形式で出力
         if value and name in NUMERIC_PRESERVE_FIELDS:
             return f'="{value}"'
@@ -525,6 +520,20 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
 
     def get_check(name: str) -> str:
         field = field_map.get(name)
+        # お届出印金融機関は「あり」/「なし」で判定
+        if name == "お届出印金融機関":
+            if field and field.value == "あり":
+                return "OK"
+            return "NG"
+        # 銀行名は「（x）」を含む場合NG（種別未選択）
+        if name == "銀行名":
+            if field is None or not field.value:
+                return "NG"
+            if "（x）" in field.value:
+                return "NG"
+            if field.confidence_level == ConfidenceLevel.LOW:
+                return "要確認"
+            return "OK"
         if field is None or not field.value:
             return "NG"
         if field.confidence_level == ConfidenceLevel.LOW:
@@ -538,6 +547,7 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
         "入力ファイル名": file_item.batch_filename,
         "預金者氏名": get_value("預金者氏名"),
         "預金者フリガナ": get_value("預金者フリガナ"),
+        "お届出印金融機関": get_value("お届出印金融機関"),
         "銀行名": get_value("銀行名"),
         "支店名": get_value("支店名"),
         "預金種目": get_value("預金種目"),
@@ -551,6 +561,7 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
         "料金等の種類": get_value("料金等の種類"),
         "預金者氏名_チェック": get_check("預金者氏名"),
         "預金者フリガナ_チェック": get_check("預金者フリガナ"),
+        "お届出印金融機関_チェック": get_check("お届出印金融機関"),
         "銀行名_チェック": get_check("銀行名"),
         "支店名_チェック": get_check("支店名"),
         "預金種目_チェック": get_check("預金種目"),

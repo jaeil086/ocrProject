@@ -189,7 +189,7 @@ export async function reprocessFile(
 }
 
 /**
- * バッチ全体結果CSVダウンロード
+ * バッチ全体結果Excelダウンロード（チェック項目色分け付き）
  */
 export async function downloadBatchCsv(batchId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/batch/${batchId}/download/csv`);
@@ -202,7 +202,7 @@ export async function downloadBatchCsv(batchId: string): Promise<void> {
   a.href = url;
   a.download =
     res.headers.get('content-disposition')?.split("''")[1] ||
-    `OCR_BATCH_RESULT_${batchId}.csv`;
+    `OCR_BATCH_RESULT_${batchId}.xlsx`;
   a.click();
   window.URL.revokeObjectURL(url);
 }

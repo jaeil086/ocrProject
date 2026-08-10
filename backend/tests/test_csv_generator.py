@@ -172,7 +172,7 @@ class TestCsvGeneratorGenerate:
 
         # 全チェックカラムが存在すること
         check_columns = [c for c in df.columns if c.endswith("_チェック")]
-        assert len(check_columns) == 13
+        assert len(check_columns) == 14
 
         # HIGHのフィールドは全て"OK"
         assert df.iloc[0]["預金者氏名_チェック"] == "OK"
@@ -254,9 +254,9 @@ class TestCsvGeneratorFilename:
     def test_normal_filename_format(
         self, csv_generator: CsvGenerator, sample_document: OcrDocument
     ):
-        """通常ケース: {FileID}_{委託者番号}_{契約者番号}.csv"""
+        """通常ケース: {委託者番号}_{契約者番号}.csv"""
         filename = csv_generator.generate_filename(sample_document)
-        assert filename == "FILE001_12345_67890.csv"
+        assert filename == "12345_67890.csv"
 
     def test_filename_with_review_marker(
         self, csv_generator: CsvGenerator, sample_document: OcrDocument
@@ -289,7 +289,7 @@ class TestCsvGeneratorFilename:
             )
         )
         filename = csv_generator.generate_filename(sample_document)
-        assert filename == "FILE001_12345_67890.csv"
+        assert filename == "12345_67890.csv"
 
     def test_filename_missing_consignor_number(
         self, csv_generator: CsvGenerator, sample_document: OcrDocument
@@ -314,17 +314,17 @@ class TestGenerateFilenameHelper:
     def test_normal_csv(self):
         """通常CSV命名"""
         result = _generate_filename("F001", "111", "222", False, "csv")
-        assert result == "F001_111_222.csv"
+        assert result == "111_222.csv"
 
     def test_normal_pdf(self):
         """通常PDF命名"""
         result = _generate_filename("F001", "111", "222", False, "pdf")
-        assert result == "F001_111_222.pdf"
+        assert result == "111_222.pdf"
 
     def test_review_csv(self):
         """要確認付きCSV命名"""
         result = _generate_filename("F001", "111", "222", True, "csv")
-        assert result =★要確認_111_222.csv"
+        assert result == "★要確認_111_222.csv"
 
     def test_unknown_missing_consignor(self):
         """委託者番号なしでUNKNOWN"""

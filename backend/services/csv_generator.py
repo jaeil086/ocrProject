@@ -1,9 +1,14 @@
 """
-CSV生成サービス
+CSV/Excel生成サービス
 
-OcrDocumentからpandas DataFrameを経由してCSVバイナリを生成する。
-出力形式は check-results.csv に合わせた構成。
-ファイル命名規則に基づくCSVファイル名生成も担当する。
+OcrDocumentからpandas DataFrameを経由してCSVバイナリ/Excel(xlsx)を生成する。
+出力形式は check-results に合わせた構成。
+ファイル命名規則に基づくファイル名生成も担当する。
+
+Excel出力時はチェック項目に色分けを適用:
+  - NG: 赤色フォント
+  - OK: 青色フォント
+  - 要確認: オレンジフォント
 """
 
 import io
@@ -11,6 +16,9 @@ from datetime import datetime
 from typing import Optional
 
 import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 from backend.models.enums import ConfidenceLevel
 from backend.models.schemas import OcrDocument
@@ -24,6 +32,7 @@ CSV_COLUMNS = [
     # 抽出フィールド
     "預金者氏名",
     "預金者フリガナ",
+    "お届出印金融機関",
     "銀行名",
     "支店名",
     "預金種目",
@@ -38,6 +47,7 @@ CSV_COLUMNS = [
     # チェック結果カラム
     "預金者氏名_チェック",
     "預金者フリガナ_チェック",
+    "お届出印金融機関_チェック",
     "銀行名_チェック",
     "支店名_チェック",
     "預金種目_チェック",
@@ -55,6 +65,7 @@ CSV_COLUMNS = [
 CHECK_FIELDS = [
     "預金者氏名",
     "預金者フリガナ",
+    "お届出印金融機関",
     "銀行名",
     "支店名",
     "預金種目",
@@ -143,6 +154,9 @@ class CsvGenerator:
             if field is None:
                 return ""
             value = field.corrected_value or field.value or ""
+            # お届出印金融機関は「あり」→OK、「なし」→NGに変換
+            if name == "お届出印金融機関":
+                return "OK" if value == "あり" else "NG"
             # 数値フィールドの先頭0を保持するためExcel数式形式で出力
             if value and name in NUMERIC_PRESERVE_FIELDS:
                 return f'="{value}"'
@@ -151,11 +165,27 @@ class CsvGenerator:
         def get_check(name: str) -> str:
             """
             フィールドのチェック結果を返す
+            - お届出印金融機関: 「あり」→OK、それ以外→NG
+            - 銀行名: 「（x）」を含む場合→NG（種別未選択）
             - 値が正常に取得できている場合: "OK"
             - 値がない場合: "NG"
             - Confidence低い場合: "要確認"
             """
             field = field_map.get(name)
+            # お届出印金融機関は「あり」/「なし」で判定
+            if name == "お届出印金融機関":
+                if field and field.value == "あり":
+                    return "OK"
+                return "NG"
+            # 銀行名は「（x）」を含む場合NG（種別未選択）
+            if name == "銀行名":
+                if field is None or not field.value:
+                    return "NG"
+                if "（x）" in field.value:
+                    return "NG"
+                if field.confidence_level == ConfidenceLevel.LOW:
+                    return "要確認"
+                return "OK"
             if field is None or not field.value:
                 return "NG"
             if field.confidence_level == ConfidenceLevel.LOW:
@@ -171,6 +201,7 @@ class CsvGenerator:
             # 抽出フィールド
             "預金者氏名": get_value("預金者氏名"),
             "預金者フリガナ": get_value("預金者フリガナ"),
+            "お届出印金融機関": get_value("お届出印金融機関"),
             "銀行名": get_value("銀行名"),
             "支店名": get_value("支店名"),
             "預金種目": get_value("預金種目"),
@@ -185,6 +216,7 @@ class CsvGenerator:
             # チェック結果
             "預金者氏名_チェック": get_check("預金者氏名"),
             "預金者フリガナ_チェック": get_check("預金者フリガナ"),
+            "お届出印金融機関_チェック": get_check("お届出印金融機関"),
             "銀行名_チェック": get_check("銀行名"),
             "支店名_チェック": get_check("支店名"),
             "預金種目_チェック": get_check("預金種目"),
@@ -199,3 +231,75 @@ class CsvGenerator:
         }
 
         return row
+
+    def generate_excel(self, rows: list[dict]) -> bytes:
+        """
+        複数行のデータからExcel(xlsx)バイナリを生成
+
+        チェック項目に色分けを適用:
+          - NG: 赤色フォント（太字）
+          - OK: 青色フォント
+          - 要確認: オレンジフォント（太字）
+
+        Args:
+            rows: _build_rowで生成されたdict行データのリスト
+
+        Returns:
+            bytes: xlsxバイナリ
+        """
+        df = pd.DataFrame(rows, columns=CSV_COLUMNS)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "OCR結果"
+
+        # フォント定義
+        font_ng = Font(color="FF0000", bold=True)       # 赤色（NG）
+        font_ok = Font(color="0000FF", bold=False)      # 青色（OK）
+        font_review = Font(color="FF8C00", bold=True)   # オレンジ（要確認）
+        font_header = Font(bold=True, color="FFFFFF")
+        fill_header = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+
+        # ヘッダー書き込み
+        for col_idx, col_name in enumerate(CSV_COLUMNS, 1):
+            cell = ws.cell(row=1, column=col_idx, value=col_name)
+            cell.font = font_header
+            cell.fill = fill_header
+            cell.alignment = Alignment(horizontal="center")
+
+        # データ書き込み
+        for row_idx, row_data in enumerate(rows, 2):
+            for col_idx, col_name in enumerate(CSV_COLUMNS, 1):
+                value = row_data.get(col_name, "")
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+
+                # チェック項目に色分け適用
+                if col_name.endswith("_チェック"):
+                    if value == "NG":
+                        cell.font = font_ng
+                    elif value == "OK":
+                        cell.font = font_ok
+                    elif value == "要確認":
+                        cell.font = font_review
+                # お届出印金融機関の値カラムにも色分け適用（OK/NG表示）
+                elif col_name == "お届出印金融機関":
+                    if value == "NG":
+                        cell.font = font_ng
+                    elif value == "OK":
+                        cell.font = font_ok
+
+        # 列幅を自動調整（おおよそ）
+        for col_idx, col_name in enumerate(CSV_COLUMNS, 1):
+            # 日本語文字は幅2として概算
+            width = max(len(col_name) * 1.5, 8)
+            ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
+
+        # バイナリ出力
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    def build_row(self, document: OcrDocument) -> dict:
+        """外部から呼び出し可能な行データ構築（バッチCSV用）"""
+        return self._build_row(document)

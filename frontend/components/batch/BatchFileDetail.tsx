@@ -14,7 +14,31 @@ type TabId = 'preview_ocr' | 'log';
 
 /** チェック結果インラインバッジ */
 function InlineCheckBadge({ field }: { field: OcrField }) {
+  // お届出印金融機関は「あり」/「なし」で判定
+  if (field.field_name === 'お届出印金融機関') {
+    if (field.value === 'あり') {
+      return (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-600">
+          OK
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
+        NG
+      </span>
+    );
+  }
+
   if (!field.value) {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
+        NG
+      </span>
+    );
+  }
+  // 銀行名で種別未選択（x）の場合はNG
+  if (field.field_name === '銀行名' && field.value.includes('（x）')) {
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
         NG
@@ -95,6 +119,7 @@ export default function BatchFileDetail({
   const mainFields = [
     '預金者氏名',
     '預金者フリガナ',
+    'お届出印金融機関',
     '銀行名',
     '支店名',
     '預金種目',
