@@ -25,10 +25,10 @@ class Validator:
         field_map = {f.field_name: f for f in fields}
 
         # 届出印チェック
-        seal = field_map.get("届出印")
+        seal = field_map.get("お届出印金融機関")
         if seal and seal.value == "なし":
             errors.append(ValidationError(
-                field_name="届出印",
+                field_name="お届出印金融機関",
                 error_type=ValidationErrorType.MISSING_FIELD,
                 message="届出印が押印されていません",
             ))
