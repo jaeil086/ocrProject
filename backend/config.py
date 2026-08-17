@@ -39,8 +39,27 @@ BEDROCK_RETRY_MAX_WAIT: int = 15
 CLAUDE_MAX_TOKENS: int = 1024  
 
 
-# === S3 PREFIX ===
+# === 金融機関マスター設定 ===
+# Zengin Code API URL
+ZENGIN_BANKS_URL: str = "https://zengin-code.github.io/api/banks.json"
+ZENGIN_BRANCHES_URL_TEMPLATE: str = "https://zengin-code.github.io/api/branches/{bank_code}.json"
+
+# マスターデータキャッシュパス
+ZENGIN_CACHE_DIR = DATA_DIR / "zengin_cache"
+ZENGIN_BANKS_CACHE_FILE = ZENGIN_CACHE_DIR / "banks.json"
+ZENGIN_BRANCHES_CACHE_DIR = ZENGIN_CACHE_DIR / "branches"
+
+# キャッシュ有効期限（秒）: 24時間
+ZENGIN_CACHE_TTL_SECONDS: int = 86400
+
+# Fuzzy Matching 閾値
+MASTER_MATCH_OK_THRESHOLD: float = 95.0       # 95%以上 → OK（自動確定）
+MASTER_MATCH_REVIEW_THRESHOLD: float = 85.0   # 85%以上 → 確認必要
+# 85%未満 → NG
+
+# === S3 PREFIX :클라우드 원격처리.  ===
 S3_BUCKET_NAME = "cheiru-ocr-storage"
 S3_INPUT_PREFIX = "00_input"
 S3_OUTPUT_PREFIX = "01_output"
 S3_ARCHIVE_PREFIX = "02_archive"
+ 

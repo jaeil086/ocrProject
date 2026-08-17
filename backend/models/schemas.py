@@ -34,6 +34,30 @@ class OcrField(BaseModel):
     confidence_level: ConfidenceLevel  # 判定レベル
     is_confirmed: bool = False  # 担当者確認済みフラグ
     corrected_value: Optional[str] = None  # 修正値
+    master_match: Optional["MasterMatchInfo"] = None  # 金融機関マスター照合結果
+
+
+class MasterMatchCandidate(BaseModel):
+    """マスターマッチング候補"""
+
+    name: str  # 候補名称
+    code: str  # 候補コード
+    score: float  # 一致率 (0-100)
+
+
+class MasterMatchInfo(BaseModel):
+    """金融機関マスターとのマッチング結果"""
+
+    master_value: Optional[str] = None  # マスターの正式名称
+    master_code: Optional[str] = None  # マスターのコード（銀行番号/店番号）
+    match_score: float = 0.0  # マスター一致率 (0-100)
+    match_status: str = "unverified"  # ok / needs_review / ng / unverified
+    candidates: list[MasterMatchCandidate] = []  # 候補リスト
+    cross_check_status: Optional[str] = None  # 交差検証結果: ok / mismatch / None
+
+
+# ForwardRefの解決
+OcrField.model_rebuild()
 
 
 class ValidationError(BaseModel):

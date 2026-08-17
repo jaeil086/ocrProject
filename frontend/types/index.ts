@@ -25,6 +25,23 @@ export type ValidationErrorType =
 /** 目視確認種別 */
 export type VisualCheckType = '目視確認必要' | '確認者チェック必要';
 
+/** マスターマッチング候補 */
+export interface MasterMatchCandidate {
+  name: string;
+  code: string;
+  score: number;
+}
+
+/** 金融機関マスターとのマッチング結果 */
+export interface MasterMatchInfo {
+  master_value: string | null;
+  master_code: string | null;
+  match_score: number;
+  match_status: 'ok' | 'needs_review' | 'ng' | 'unverified';
+  candidates: MasterMatchCandidate[];
+  cross_check_status: 'ok' | 'mismatch' | null;
+}
+
 /** OCR認識フィールド */
 export interface OcrField {
   field_name: string;
@@ -33,6 +50,7 @@ export interface OcrField {
   confidence_level: ConfidenceLevel;
   is_confirmed: boolean;
   corrected_value: string | null;
+  master_match: MasterMatchInfo | null;
 }
 
 /** バリデーションエラー */

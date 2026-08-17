@@ -27,6 +27,7 @@ from backend.models.schemas import (
 from backend.services.claude_client import ClaudeClient
 from backend.services.image_preprocessor import ImagePreprocessor
 from backend.services.pdf_reader import PdfReader
+from backend.services.validator import Validator
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class OcrPipeline:
         self.pdf_reader = PdfReader()
         self.image_preprocessor = ImagePreprocessor()
         self.claude_client = ClaudeClient()
+        self.validator = Validator()
 
     async def process(
         self,
@@ -124,11 +126,30 @@ class OcrPipeline:
             document = self._build_document(file_id, claude_result)
             _update_progress(85)
 
+            # Step 5: 金融機関マスター検証
+            logger.info(f"[{file_id}] 金融機関マスター検証開始")
+            t3 = time.perf_counter()
+            try:
+                master_errors = await self.validator.check_financial_codes(
+                    document.fields
+                )
+                document.validation_errors.extend(master_errors)
+                # コード補完（銀行番号/店番号が空の場合にマスターから自動決定）
+                self.validator.complement_codes(document.fields)
+            except Exception as e:
+                logger.warning(
+                    f"[{file_id}] 金融機関マスター検証でエラー（処理継続）: {e}"
+                )
+            t_master = time.perf_counter() - t3
+            logger.info(f"[{file_id}] 金融機関マスター検証完了: {t_master:.2f}秒")
+            _update_progress(90)
+
             # パイプライン全体の計測ログ
             total_time = time.perf_counter() - pipeline_start
             logger.info(
                 f"[{file_id}] パイプライン完了: 合計{total_time:.2f}秒 "
-                f"(PDF:{t_pdf:.2f}s + 前処理:{t_preprocess:.2f}s + Claude:{t_claude:.2f}s)"
+                f"(PDF:{t_pdf:.2f}s + 前処理:{t_preprocess:.2f}s + "
+                f"Claude:{t_claude:.2f}s + マスター検証:{t_master:.2f}s)"
             )
 
             return ProcessingResult(

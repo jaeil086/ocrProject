@@ -176,7 +176,7 @@ async def _process_single_file(
         else:
             missing_errors = []
 
-        financial_errors = _validator.check_financial_codes(document.fields)
+        financial_errors = await _validator.check_financial_codes(document.fields)
         all_errors = missing_errors + financial_errors
         document.validation_errors = all_errors
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { BatchFileItem, OcrDocument, OcrField } from '@/types';
+import type { BatchFileItem, OcrDocument, OcrField, MasterMatchInfo } from '@/types';
 import { getResult, downloadCsv, downloadPdf } from '@/lib/api';
 
 interface BatchFileDetailProps {
@@ -90,6 +90,66 @@ function InlineCheckBadge({ field, allFields }: { field: OcrField; allFields?: O
     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-600">
       OK
     </span>
+  );
+}
+
+/**
+ * マスター照合情報のインライン表示
+ * 銀行名・支店名フィールドでmaster_matchが存在する場合に表示
+ */
+function MasterMatchDetail({ masterMatch }: { masterMatch: MasterMatchInfo }) {
+  if (masterMatch.match_status === 'unverified') {
+    return null;
+  }
+
+  const statusConfig: Record<string, { label: string; className: string }> = {
+    ok: { label: 'マスタ一致', className: 'text-green-600' },
+    needs_review: { label: '候補あり', className: 'text-amber-600' },
+    ng: { label: '不一致', className: 'text-red-600' },
+  };
+
+  const config = statusConfig[masterMatch.match_status] || { label: '', className: '' };
+
+  return (
+    <div className="ml-28 pl-2 pb-2 border-b border-gray-100">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
+        {/* マスター値 + コード */}
+        {masterMatch.master_value && (
+          <span className="text-gray-500">
+            マスタ: <span className="font-medium text-gray-700">{masterMatch.master_value}</span>
+          </span>
+        )}
+        {masterMatch.master_code && (
+          <span className="text-gray-500">
+            コード: <span className="font-mono font-medium text-gray-700">{masterMatch.master_code}</span>
+          </span>
+        )}
+        {/* 一致率 */}
+        {masterMatch.match_score > 0 && (
+          <span className={config.className}>
+            一致率: {Math.round(masterMatch.match_score)}%
+          </span>
+        )}
+        {/* 交差検証結果 */}
+        {masterMatch.cross_check_status === 'mismatch' && (
+          <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
+            コード不一致
+          </span>
+        )}
+      </div>
+      {/* 候補表示（needs_review / ng の場合） */}
+      {masterMatch.match_status !== 'ok' && masterMatch.candidates.length > 0 && (
+        <div className="mt-0.5 text-[10px] text-gray-400">
+          候補: {masterMatch.candidates.slice(0, 3).map((c, i) => (
+            <span key={i} className="inline-flex items-center gap-0.5 mr-2">
+              <span className="text-gray-600">{c.name}</span>
+              <span className="font-mono text-gray-400">[{c.code}]</span>
+              <span className="text-gray-400">{Math.round(c.score)}%</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -250,20 +310,29 @@ export default function BatchFileDetail({
                     {mainFields.map((fieldName) => {
                       const field = document.fields.find((f) => f.field_name === fieldName);
                       const value = field?.corrected_value || field?.value || '-';
+                      const showMasterMatch = field?.master_match
+                        && field.master_match.match_status !== 'unverified'
+                        && ['銀行名', '支店名', '銀行番号', '店番号'].includes(fieldName);
                       return (
-                        <div key={fieldName} className="flex items-center text-xs border-b border-gray-100 py-2.5 gap-2">
-                          {/* フィールド名 */}
-                          <span className="w-28 text-gray-500 flex-shrink-0">{fieldName}</span>
-                          {/* チェック結果バッジ */}
-                          <span className="flex-shrink-0">
-                            {field ? <InlineCheckBadge field={field} allFields={document.fields} /> : (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
-                                -
-                              </span>
-                            )}
-                          </span>
-                          {/* 値 */}
-                          <span className="flex-1 text-gray-800 font-semibold text-right">{value}</span>
+                        <div key={fieldName}>
+                          <div className="flex items-center text-xs border-b border-gray-100 py-2.5 gap-2">
+                            {/* フィールド名 */}
+                            <span className="w-28 text-gray-500 flex-shrink-0">{fieldName}</span>
+                            {/* チェック結果バッジ */}
+                            <span className="flex-shrink-0">
+                              {field ? <InlineCheckBadge field={field} allFields={document.fields} /> : (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
+                                  -
+                                </span>
+                              )}
+                            </span>
+                            {/* 値 */}
+                            <span className="flex-1 text-gray-800 font-semibold text-right">{value}</span>
+                          </div>
+                          {/* マスター照合情報（銀行名・支店名・銀行番号・店番号のみ） */}
+                          {showMasterMatch && field?.master_match && (
+                            <MasterMatchDetail masterMatch={field.master_match} />
+                          )}
                         </div>
                       );
                     })}
