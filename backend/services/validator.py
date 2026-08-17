@@ -154,6 +154,29 @@ class Validator:
                         f"銀行番号交差検証不一致: OCR={ocr_bank_code}, マスター={resolved_bank_code}"
                     )
 
+            # パターン3対応: 銀行名マッチングがOKでない＋交差検証不一致の場合
+            # OCR銀行番号から逆引きした候補も追加する
+            if (
+                bank_name_field.master_match
+                and bank_name_field.master_match.match_status != "ok"
+                and ocr_bank_code
+            ):
+                from backend.models.schemas import MasterMatchCandidate
+                code_bank_info = master.get_bank_by_code(ocr_bank_code)
+                if code_bank_info:
+                    # OCR銀行番号に対応するマスター銀行を候補の先頭に追加
+                    code_candidate = MasterMatchCandidate(
+                        name=f"{code_bank_info.name}（番号{ocr_bank_code}より）",
+                        code=code_bank_info.code,
+                        score=0.0,  # 名前マッチではないため0%
+                    )
+                    # 既存候補と重複しなければ先頭に挿入
+                    existing_codes = {c.code for c in bank_name_field.master_match.candidates}
+                    if code_bank_info.code not in existing_codes:
+                        bank_name_field.master_match.candidates.insert(0, code_candidate)
+                # 候補数を5件に制限
+                bank_name_field.master_match.candidates = bank_name_field.master_match.candidates[:5]
+
         # 銀行番号フィールドにマスター情報を付与
         if bank_code_field:
             if resolved_bank_code:
@@ -245,6 +268,42 @@ class Validator:
                     logger.info(
                         f"店番号交差検証不一致: OCR={ocr_branch_code}, マスター={resolved_branch_code}"
                     )
+
+            # パターン3対応: 支店名マッチングがOKでない場合
+            # OCR店番号から逆引きした候補も追加する
+            # resolved_bank_codeとOCR銀行番号の両方で支店を検索
+            if (
+                branch_name_field.master_match
+                and branch_name_field.master_match.match_status != "ok"
+                and ocr_branch_code
+            ):
+                from backend.models.schemas import MasterMatchCandidate
+
+                # まずresolved_bank_code(銀行名マッチから)で検索
+                code_branch_info = None
+                if resolved_bank_code:
+                    code_branch_info = await master.get_branch_by_code(
+                        resolved_bank_code, ocr_branch_code
+                    )
+
+                # 見つからなければOCR銀行番号で検索
+                if not code_branch_info and ocr_bank_code and ocr_bank_code != resolved_bank_code:
+                    code_branch_info = await master.get_branch_by_code(
+                        ocr_bank_code, ocr_branch_code
+                    )
+
+                if code_branch_info:
+                    # OCR店番号に対応するマスター支店を候補の先頭に追加
+                    code_candidate = MasterMatchCandidate(
+                        name=f"{code_branch_info.name}（番号{ocr_branch_code}より）",
+                        code=code_branch_info.code,
+                        score=0.0,  # 名前マッチではないため0%
+                    )
+                    existing_codes = {c.code for c in branch_name_field.master_match.candidates}
+                    if code_branch_info.code not in existing_codes:
+                        branch_name_field.master_match.candidates.insert(0, code_candidate)
+                # 候補数を5件に制限
+                branch_name_field.master_match.candidates = branch_name_field.master_match.candidates[:5]
 
         # 店番号フィールドにマスター情報を付与
         if branch_code_field and resolved_bank_code:

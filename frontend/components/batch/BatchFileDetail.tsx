@@ -147,18 +147,36 @@ function MasterMatchDetail({ masterMatch }: { masterMatch: MasterMatchInfo }) {
             コード不一致
           </span>
         </div>
-        {/* 候補リスト（最大3件） */}
-        {masterMatch.candidates.length > 0 && (
-          <div className="text-[10px] text-gray-400">
-            候補: {masterMatch.candidates.slice(0, 3).map((c, i) => (
-              <span key={i} className="mr-1.5">
-                <span className="text-gray-600">{c.name}</span>
-                <span className="font-mono text-gray-400"> [{c.code}]</span>
-                <span className="text-gray-400"> {Math.round(c.score)}%</span>
-              </span>
-            ))}
-          </div>
-        )}
+        {/* 候補リスト（番号逆引きと名前マッチで改行分割） */}
+        {masterMatch.candidates.length > 0 && (() => {
+          const codeCandidates = masterMatch.candidates.filter(c => c.name.includes('（番号'));
+          const nameCandidates = masterMatch.candidates.filter(c => !c.name.includes('（番号'));
+          return (
+            <div className="text-[10px] space-y-0.5">
+              {codeCandidates.length > 0 && (
+                <div className="text-gray-500">
+                  番号から: {codeCandidates.slice(0, 2).map((c, i) => (
+                    <span key={i} className="mr-1.5">
+                      <span className="font-medium text-blue-700">{c.name}</span>
+                      <span className="font-mono text-gray-400"> [{c.code}]</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {nameCandidates.length > 0 && (
+                <div className="text-gray-400">
+                  候補: {nameCandidates.slice(0, 5).map((c, i) => (
+                    <span key={i} className="mr-1.5">
+                      <span className="text-gray-600">{c.name}</span>
+                      <span className="font-mono text-gray-400"> [{c.code}]</span>
+                      <span className="text-gray-400"> {Math.round(c.score)}%</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -188,20 +206,176 @@ function MasterMatchDetail({ masterMatch }: { masterMatch: MasterMatchInfo }) {
           </span>
         )}
       </div>
-      {/* 候補リスト（needs_review / ng の場合、最大3件） */}
-      {masterMatch.match_status !== 'ok' && masterMatch.candidates.length > 0 && (
-        <div className="text-[10px] text-gray-400">
-          候補: {masterMatch.candidates.slice(0, 3).map((c, i) => (
-            <span key={i} className="mr-1.5">
-              <span className="text-gray-600">{c.name}</span>
-              <span className="font-mono text-gray-400"> [{c.code}]</span>
-              <span className="text-gray-400"> {Math.round(c.score)}%</span>
-            </span>
-          ))}
-        </div>
-      )}
+      {/* 候補リスト（needs_review / ng の場合） */}
+      {masterMatch.match_status !== 'ok' && masterMatch.candidates.length > 0 && (() => {
+        const codeCandidates = masterMatch.candidates.filter(c => c.name.includes('（番号'));
+        const nameCandidates = masterMatch.candidates.filter(c => !c.name.includes('（番号'));
+        return (
+          <div className="text-[10px] space-y-0.5">
+            {codeCandidates.length > 0 && (
+              <div className="text-gray-500">
+                番号から: {codeCandidates.slice(0, 2).map((c, i) => (
+                  <span key={i} className="mr-1.5">
+                    <span className="font-medium text-blue-700">{c.name}</span>
+                    <span className="font-mono text-gray-400"> [{c.code}]</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {nameCandidates.length > 0 && (
+              <div className="text-gray-400">
+                候補: {nameCandidates.slice(0, 5).map((c, i) => (
+                  <span key={i} className="mr-1.5">
+                    <span className="text-gray-600">{c.name}</span>
+                    <span className="font-mono text-gray-400"> [{c.code}]</span>
+                    <span className="text-gray-400"> {Math.round(c.score)}%</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
+}
+
+/**
+ * 金融機関グループのマスター照合結果を3パターンで表示
+ * パターン1: 名前OK + コード不一致 → 「名前は正しい。正しいコードは○○」
+ * パターン2: コードOK + 名前不一致 → 「コード○○は△△です」
+ * パターン3: 両方不一致 → 名前の候補リストを表示
+ */
+function FinancialGroupMatchDetail({
+  primaryMatch,
+  codeMatch,
+  nameLabel,
+  codeLabel,
+}: {
+  primaryMatch: MasterMatchInfo | null | undefined;
+  codeMatch: MasterMatchInfo | null | undefined;
+  nameLabel: string;
+  codeLabel: string;
+}) {
+  // 判定: 名前のマスター照合がOKか
+  const nameIsOk = primaryMatch?.match_status === 'ok';
+  // 判定: コードのマスター照合がOKか（OCRコードがマスターに存在する）
+  const codeIsOk = codeMatch?.match_status === 'ok' && !codeMatch?.cross_check_status;
+  // 交差検証不一致があるか
+  const hasCrossCheckMismatch = primaryMatch?.cross_check_status === 'mismatch'
+    || codeMatch?.cross_check_status === 'mismatch';
+
+  // パターン1: 名前OK + コード不一致（名前は正しく読めたが、番号がOCR誤読）
+  if (nameIsOk && hasCrossCheckMismatch && primaryMatch) {
+    return (
+      <div className="space-y-0.5 text-[10px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          <span className="text-green-600">
+            {nameLabel}マスタ一致: <span className="font-medium">{primaryMatch.master_value}</span>
+          </span>
+          <span className="text-gray-500">
+            正しいコード: <span className="font-mono font-bold text-blue-700">{primaryMatch.master_code}</span>
+          </span>
+          <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
+            {codeLabel}不一致
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // パターン2: コードOK + 名前不一致（番号は正しいが、名前をOCR誤読）
+  if (codeIsOk && codeMatch && !nameIsOk && primaryMatch) {
+    return (
+      <div className="space-y-0.5 text-[10px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          <span className="text-green-600">
+            {codeLabel}マスタ一致: <span className="font-mono font-medium">{codeMatch.master_code}</span>
+          </span>
+          <span className="text-gray-500">
+            正しい{nameLabel}: <span className="font-bold text-amber-700">{codeMatch.master_value}</span>
+          </span>
+          <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
+            {nameLabel}不一致
+          </span>
+        </div>
+        {/* 名前の候補リスト */}
+        {primaryMatch.candidates.length > 0 && (
+          <div className="text-gray-400">
+            候補: {primaryMatch.candidates.slice(0, 5).map((c, i) => (
+              <span key={i} className="mr-1.5">
+                <span className="text-gray-600">{c.name}</span>
+                <span className="font-mono text-gray-400"> [{c.code}]</span>
+                <span className="text-gray-400"> {Math.round(c.score)}%</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // パターン3: 両方不一致 or マスター照合がng/needs_review
+  if (primaryMatch) {
+    return (
+      <div className="space-y-0.5 text-[10px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          {primaryMatch.master_value && (
+            <span className="text-gray-500">
+              マスタ: <span className="font-medium text-amber-700">{primaryMatch.master_value}</span>
+            </span>
+          )}
+          {primaryMatch.master_code && (
+            <span className="text-gray-500">
+              コード: <span className="font-mono font-medium text-amber-700">{primaryMatch.master_code}</span>
+            </span>
+          )}
+          {primaryMatch.match_score > 0 && primaryMatch.match_status !== 'ok' && (
+            <span className="text-amber-600">
+              一致率: {Math.round(primaryMatch.match_score)}%
+            </span>
+          )}
+          {hasCrossCheckMismatch && (
+            <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
+              コード不一致
+            </span>
+          )}
+        </div>
+        {/* 候補リスト（番号逆引きと名前マッチで改行分割） */}
+        {primaryMatch.candidates.length > 0 && (() => {
+          const codeCandidates = primaryMatch.candidates.filter(c => c.name.includes('（番号'));
+          const nameCandidates = primaryMatch.candidates.filter(c => !c.name.includes('（番号'));
+          return (
+            <div className="text-[10px] space-y-0.5">
+              {codeCandidates.length > 0 && (
+                <div className="text-gray-500">
+                  番号から: {codeCandidates.slice(0, 2).map((c, i) => (
+                    <span key={i} className="mr-1.5">
+                      <span className="font-medium text-blue-700">{c.name}</span>
+                      <span className="font-mono text-gray-400"> [{c.code}]</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {nameCandidates.length > 0 && (
+                <div className="text-gray-400">
+                  候補: {nameCandidates.slice(0, 5).map((c, i) => (
+                    <span key={i} className="mr-1.5">
+                      <span className="text-gray-600">{c.name}</span>
+                      <span className="font-mono text-gray-400"> [{c.code}]</span>
+                      <span className="text-gray-400"> {Math.round(c.score)}%</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 /**
@@ -261,8 +435,19 @@ function FinancialFieldGroup({
         </span>
         <span className="flex-1 text-gray-800 font-semibold text-right">{codeValue}</span>
       </div>
-      {/* マスター照合情報（グループ下に1回だけ表示） */}
-      {hasValidMatch && primaryMatch && (
+      {/* マスター照合情報（グループ下に1回だけ表示 - 3パターン対応） */}
+      {hasIssue && (
+        <div className="pl-2 pb-2 ml-28">
+          <FinancialGroupMatchDetail
+            primaryMatch={primaryMatch}
+            codeMatch={codeMatch}
+            nameLabel={nameLabel}
+            codeLabel={codeLabel}
+          />
+        </div>
+      )}
+      {/* 問題なし（OK）の場合もマスター情報を表示 */}
+      {!hasIssue && hasValidMatch && primaryMatch && (
         <div className="pl-2 pb-2 ml-28">
           <MasterMatchDetail masterMatch={primaryMatch} />
         </div>
