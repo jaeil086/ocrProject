@@ -118,7 +118,7 @@ class TestCheckFinancialCodes:
 
     @pytest.mark.asyncio
     async def test_bank_code_not_found(self, validator, master_service):
-        """銀行番号がマスターに存在しない場合"""
+        """銀行番号がマスターに存在しない場合 → 銀行名からコード確定しているためMISMATCHになる"""
         fields = [
             _make_field("銀行名", "横浜（銀行）"),
             _make_field("銀行番号", "9999"),  # 存在しないコード
@@ -128,9 +128,19 @@ class TestCheckFinancialCodes:
 
         errors = await validator.check_financial_codes(fields)
 
-        # 銀行番号不存在エラー
-        not_found_errors = [e for e in errors if e.error_type == ValidationErrorType.BANK_CODE_NOT_FOUND]
-        assert len(not_found_errors) > 0
+        # 銀行名マスター照合でコード確定(0138)のため、9999との不一致エラー
+        mismatch_errors = [e for e in errors if e.error_type == ValidationErrorType.BANK_CODE_MISMATCH]
+        assert len(mismatch_errors) > 0
+
+        # 銀行番号フィールドはOCR値を変更しない（corrected_valueは設定しない）
+        bank_code_field = next(f for f in fields if f.field_name == "銀行番号")
+        assert bank_code_field.corrected_value is None
+        # confidence_levelはLOWに変更される
+        assert bank_code_field.confidence_level == ConfidenceLevel.LOW
+        # master_matchに候補情報（マスター確定コード）が入っている
+        assert bank_code_field.master_match is not None
+        assert bank_code_field.master_match.master_code == "0138"
+        assert bank_code_field.master_match.cross_check_status == "mismatch"
 
     @pytest.mark.asyncio
     async def test_yucho_skip(self, validator, master_service):

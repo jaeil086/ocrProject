@@ -84,9 +84,15 @@ class Validator:
         検証対象: 銀行名、銀行番号、支店名、店番号
         交差検証: 銀行名↔銀行番号、支店名↔店番号
 
+        交差検証でmismatchの場合:
+          - 銀行番号/店番号: マスター値でcorrected_valueを設定、confidence_levelをLOWに
+          - 銀行名/支店名: confidence_levelをLOWに変更
+
         Returns:
             ValidationErrorリスト（交差検証不一致の場合に追加）
         """
+        from backend.models.enums import ConfidenceLevel
+
         errors: list[ValidationError] = []
 
         if not ZenginMasterService.is_initialized():
@@ -121,49 +127,89 @@ class Validator:
             if bank_match.master_code:
                 resolved_bank_code = bank_match.master_code
 
+            # マスター照合結果がng/needs_reviewの場合、confidence_levelをLOWに
+            if bank_match.match_status in ("ng", "needs_review"):
+                bank_name_field.confidence_level = ConfidenceLevel.LOW
+
             # 銀行名↔銀行番号 交差検証
-            if ocr_bank_code:
-                cross_status = master.cross_check_bank_code(
-                    ocr_bank_name, ocr_bank_code
-                )
+            if ocr_bank_code and resolved_bank_code:
+                if ocr_bank_code == resolved_bank_code:
+                    # 一致: OCR銀行番号とマスター確定コードが同じ
+                    cross_status = "ok"
+                else:
+                    # 不一致: OCR銀行番号がマスター確定コードと異なる
+                    cross_status = "mismatch"
+
                 bank_name_field.master_match.cross_check_status = cross_status
 
                 if cross_status == "mismatch":
                     errors.append(ValidationError(
                         field_name="銀行番号",
                         error_type=ValidationErrorType.BANK_CODE_MISMATCH,
-                        message=f"銀行名「{ocr_bank_name}」と銀行番号「{ocr_bank_code}」が一致しません",
+                        message=f"銀行名「{ocr_bank_name}」と銀行番号「{ocr_bank_code}」が一致しません（正しくは{resolved_bank_code}）",
                     ))
+                    # 銀行名フィールドのconfidence_levelをLOWに
+                    bank_name_field.confidence_level = ConfidenceLevel.LOW
+                    logger.info(
+                        f"銀行番号交差検証不一致: OCR={ocr_bank_code}, マスター={resolved_bank_code}"
+                    )
 
-        # 銀行番号フィールドにもマスター情報を付与
-        if bank_code_field and ocr_bank_code:
-            bank_info = master.get_bank_by_code(ocr_bank_code)
-            if bank_info:
-                bank_code_field.master_match = MasterMatchInfo(
-                    master_value=bank_info.name,
-                    master_code=bank_info.code,
-                    match_score=100.0,
-                    match_status="ok",
-                )
-                # 銀行名が空だが銀行番号からコードを解決できた場合
-                if not resolved_bank_code:
+        # 銀行番号フィールドにマスター情報を付与
+        if bank_code_field:
+            if resolved_bank_code:
+                # マスターで銀行コードが確定している場合
+                bank_info = master.get_bank_by_code(resolved_bank_code)
+                if ocr_bank_code == resolved_bank_code:
+                    # OCR値とマスター値が一致 → OK
+                    bank_code_field.master_match = MasterMatchInfo(
+                        master_value=bank_info.name if bank_info else None,
+                        master_code=resolved_bank_code,
+                        match_score=100.0,
+                        match_status="ok",
+                    )
+                else:
+                    # OCR値とマスター値が不一致 → 候補として提示（OCR値は変更しない）
+                    bank_code_field.master_match = MasterMatchInfo(
+                        master_value=bank_info.name if bank_info else None,
+                        master_code=resolved_bank_code,
+                        match_score=0.0,  # OCR値とは不一致なので0%
+                        match_status="needs_review",
+                        cross_check_status="mismatch",
+                    )
+                    bank_code_field.confidence_level = ConfidenceLevel.LOW
+                    logger.info(
+                        f"銀行番号不一致（候補提示）: OCR={ocr_bank_code}, マスター候補={resolved_bank_code}"
+                    )
+            elif ocr_bank_code:
+                # 銀行名からコード確定できなかった場合、OCR銀行番号をマスターで検証
+                bank_info = master.get_bank_by_code(ocr_bank_code)
+                if bank_info:
+                    bank_code_field.master_match = MasterMatchInfo(
+                        master_value=bank_info.name,
+                        master_code=bank_info.code,
+                        match_score=100.0,
+                        match_status="ok",
+                    )
                     resolved_bank_code = ocr_bank_code
-            else:
-                bank_code_field.master_match = MasterMatchInfo(
-                    match_score=0.0,
-                    match_status="ng",
-                )
-                errors.append(ValidationError(
-                    field_name="銀行番号",
-                    error_type=ValidationErrorType.BANK_CODE_NOT_FOUND,
-                    message=f"銀行番号「{ocr_bank_code}」はマスターに存在しません",
-                ))
+                else:
+                    bank_code_field.master_match = MasterMatchInfo(
+                        match_score=0.0,
+                        match_status="ng",
+                    )
+                    bank_code_field.confidence_level = ConfidenceLevel.LOW
+                    errors.append(ValidationError(
+                        field_name="銀行番号",
+                        error_type=ValidationErrorType.BANK_CODE_NOT_FOUND,
+                        message=f"銀行番号「{ocr_bank_code}」はマスターに存在しません",
+                    ))
 
         # === 支店名マスター照合 ===
         branch_name_field = field_map.get("支店名")
         branch_code_field = field_map.get("店番号")
         ocr_branch_name = branch_name_field.value if branch_name_field else None
         ocr_branch_code = branch_code_field.value if branch_code_field else None
+
+        resolved_branch_code: Optional[str] = None  # マスターで確定した支店コード
 
         if ocr_branch_name and resolved_bank_code:
             # 支店名をマスターと照合
@@ -172,49 +218,93 @@ class Validator:
             )
             branch_name_field.master_match = branch_match
 
+            if branch_match.master_code:
+                resolved_branch_code = branch_match.master_code
+
+            # マスター照合結果がng/needs_reviewの場合、confidence_levelをLOWに
+            if branch_match.match_status in ("ng", "needs_review"):
+                branch_name_field.confidence_level = ConfidenceLevel.LOW
+
             # 支店名↔店番号 交差検証
-            if ocr_branch_code:
-                cross_status = await master.cross_check_branch_code(
-                    resolved_bank_code, ocr_branch_name, ocr_branch_code
-                )
+            if ocr_branch_code and resolved_branch_code:
+                if ocr_branch_code == resolved_branch_code:
+                    cross_status = "ok"
+                else:
+                    cross_status = "mismatch"
+
                 branch_name_field.master_match.cross_check_status = cross_status
 
                 if cross_status == "mismatch":
                     errors.append(ValidationError(
                         field_name="店番号",
                         error_type=ValidationErrorType.BRANCH_CODE_MISMATCH,
-                        message=f"支店名「{ocr_branch_name}」と店番号「{ocr_branch_code}」が一致しません",
+                        message=f"支店名「{ocr_branch_name}」と店番号「{ocr_branch_code}」が一致しません（正しくは{resolved_branch_code}）",
                     ))
+                    # 支店名フィールドのconfidence_levelをLOWに
+                    branch_name_field.confidence_level = ConfidenceLevel.LOW
+                    logger.info(
+                        f"店番号交差検証不一致: OCR={ocr_branch_code}, マスター={resolved_branch_code}"
+                    )
 
-        # 店番号フィールドにもマスター情報を付与
-        if branch_code_field and ocr_branch_code and resolved_bank_code:
-            branch_info = await master.get_branch_by_code(
-                resolved_bank_code, ocr_branch_code
-            )
-            if branch_info:
-                branch_code_field.master_match = MasterMatchInfo(
-                    master_value=branch_info.name,
-                    master_code=branch_info.code,
-                    match_score=100.0,
-                    match_status="ok",
+        # 店番号フィールドにマスター情報を付与
+        if branch_code_field and resolved_bank_code:
+            if resolved_branch_code:
+                # マスターで支店コードが確定している場合
+                branch_info = await master.get_branch_by_code(
+                    resolved_bank_code, resolved_branch_code
                 )
-            else:
-                branch_code_field.master_match = MasterMatchInfo(
-                    match_score=0.0,
-                    match_status="ng",
+                if ocr_branch_code == resolved_branch_code:
+                    # OCR値とマスター値が一致 → OK
+                    branch_code_field.master_match = MasterMatchInfo(
+                        master_value=branch_info.name if branch_info else None,
+                        master_code=resolved_branch_code,
+                        match_score=100.0,
+                        match_status="ok",
+                    )
+                else:
+                    # OCR値とマスター値が不一致 → 候補として提示（OCR値は変更しない）
+                    branch_code_field.master_match = MasterMatchInfo(
+                        master_value=branch_info.name if branch_info else None,
+                        master_code=resolved_branch_code,
+                        match_score=0.0,  # OCR値とは不一致なので0%
+                        match_status="needs_review",
+                        cross_check_status="mismatch",
+                    )
+                    branch_code_field.confidence_level = ConfidenceLevel.LOW
+                    logger.info(
+                        f"店番号不一致（候補提示）: OCR={ocr_branch_code}, マスター候補={resolved_branch_code}"
+                    )
+            elif ocr_branch_code:
+                # 支店名からコード確定できなかった場合、OCR店番号をマスターで検証
+                branch_info = await master.get_branch_by_code(
+                    resolved_bank_code, ocr_branch_code
                 )
-                errors.append(ValidationError(
-                    field_name="店番号",
-                    error_type=ValidationErrorType.BRANCH_CODE_NOT_FOUND,
-                    message=f"店番号「{ocr_branch_code}」はマスターに存在しません（銀行コード: {resolved_bank_code}）",
-                ))
+                if branch_info:
+                    branch_code_field.master_match = MasterMatchInfo(
+                        master_value=branch_info.name,
+                        master_code=branch_info.code,
+                        match_score=100.0,
+                        match_status="ok",
+                    )
+                else:
+                    branch_code_field.master_match = MasterMatchInfo(
+                        match_score=0.0,
+                        match_status="ng",
+                    )
+                    branch_code_field.confidence_level = ConfidenceLevel.LOW
+                    errors.append(ValidationError(
+                        field_name="店番号",
+                        error_type=ValidationErrorType.BRANCH_CODE_NOT_FOUND,
+                        message=f"店番号「{ocr_branch_code}」はマスターに存在しません（銀行コード: {resolved_bank_code}）",
+                    ))
 
         return errors
 
     def complement_codes(self, fields: list[OcrField]) -> list[OcrField]:
         """
         マスター照合結果に基づき、コードを補完する。
-        銀行名から銀行番号、支店名から店番号を自動決定。
+        - 銀行名から銀行番号、支店名から店番号を自動決定（空欄の場合）
+        - 交差検証でmismatchの場合は既にcheck_financial_codes()で補正済み
         """
         if not ZenginMasterService.is_initialized():
             return fields
@@ -231,7 +321,8 @@ class Validator:
             and bank_name_field.master_match.match_status == "ok"
             and bank_name_field.master_match.master_code
         ):
-            if bank_code_field and not bank_code_field.value:
+            # 値が空欄、かつまだ補正されていない場合のみ
+            if bank_code_field and not bank_code_field.value and not bank_code_field.corrected_value:
                 bank_code_field.corrected_value = bank_name_field.master_match.master_code
                 logger.info(
                     f"銀行番号を自動補完: {bank_name_field.master_match.master_code}"
@@ -247,7 +338,8 @@ class Validator:
             and branch_name_field.master_match.match_status == "ok"
             and branch_name_field.master_match.master_code
         ):
-            if branch_code_field and not branch_code_field.value:
+            # 値が空欄、かつまだ補正されていない場合のみ
+            if branch_code_field and not branch_code_field.value and not branch_code_field.corrected_value:
                 branch_code_field.corrected_value = branch_name_field.master_match.master_code
                 logger.info(
                     f"店番号を自動補完: {branch_name_field.master_match.master_code}"
