@@ -1,14 +1,16 @@
 """
 ImagePreprocessorのユニットテスト
 
-テスト画像を動的に生成し、前処理パイプラインの動作を検証する。
+テスト画像を動的に生成し、サイズ圧縮処理の動作を検証する。
+現在のImagePreprocessorはBedrock API上限（4.5MB）超過時のみJPEG圧縮を行い、
+それ以外はパススルーする。
 """
 
 import cv2
 import numpy as np
 import pytest
 
-from backend.services.image_preprocessor import ImagePreprocessor
+from backend.services.image_preprocessor import ImagePreprocessor, MAX_IMAGE_BYTES
 
 
 @pytest.fixture
@@ -18,11 +20,9 @@ def preprocessor():
 
 
 def _create_test_image(width: int = 300, height: int = 200, color: bool = True) -> bytes:
-    """テスト用のカラー画像をPNGバイナリとして生成する"""
+    """テスト用のカラー画像をPNGバイナリとして生成する（上限以内のサイズ）"""
     if color:
-        # 白背景にテキスト風の黒線を描画
         img = np.ones((height, width, 3), dtype=np.uint8) * 255
-        # 水平線（テキスト行を模倣）
         cv2.line(img, (20, 50), (280, 50), (0, 0, 0), 2)
         cv2.line(img, (20, 100), (280, 100), (0, 0, 0), 2)
         cv2.line(img, (20, 150), (280, 150), (0, 0, 0), 2)
@@ -34,22 +34,26 @@ def _create_test_image(width: int = 300, height: int = 200, color: bool = True) 
     return buffer.tobytes()
 
 
-def _create_skewed_image(angle_deg: float = 5.0) -> bytes:
-    """傾いた画像を生成する（傾き補正テスト用）"""
-    width, height = 400, 300
-    img = np.ones((height, width, 3), dtype=np.uint8) * 255
+def _create_large_image(size_mb: float = 5.0) -> bytes:
+    """Bedrock上限を超える大きな画像を生成する"""
+    # ランダムなカラー画像を生成して大きなPNGにする
+    # PNGはランダムデータだと圧縮率が低いためサイズが大きくなる
+    height = 3000
+    width = 4000
+    img = np.random.randint(0, 256, (height, width, 3), dtype=np.uint8)
+    _, buffer = cv2.imencode(".png", img)
+    png_bytes = buffer.tobytes()
 
-    # 水平線を多数描画（Hough変換で検出可能）
-    for y in range(50, 250, 30):
-        cv2.line(img, (30, y), (370, y), (0, 0, 0), 2)
+    # サイズが上限を超えない場合、画像を大きくして再生成
+    if len(png_bytes) <= MAX_IMAGE_BYTES:
+        # さらに大きな画像で再試行
+        height = 5000
+        width = 6000
+        img = np.random.randint(0, 256, (height, width, 3), dtype=np.uint8)
+        _, buffer = cv2.imencode(".png", img)
+        png_bytes = buffer.tobytes()
 
-    # 画像を回転させて傾きを付与
-    center = (width // 2, height // 2)
-    rotation_matrix = cv2.getRotationMatrix2D(center, angle_deg, 1.0)
-    skewed = cv2.warpAffine(img, rotation_matrix, (width, height), borderValue=(255, 255, 255))
-
-    _, buffer = cv2.imencode(".png", skewed)
-    return buffer.tobytes()
+    return png_bytes
 
 
 class TestImagePreprocessor:
@@ -61,75 +65,72 @@ class TestImagePreprocessor:
         result = preprocessor.preprocess(image_bytes)
         assert isinstance(result, bytes)
 
-    def test_preprocess_returns_valid_png(self, preprocessor):
-        """preprocess()の出力がデコード可能なPNG画像であることを確認"""
+    def test_preprocess_passthrough_under_limit(self, preprocessor):
+        """上限以内の画像はそのまま返される（パススルー）"""
+        image_bytes = _create_test_image()
+        assert len(image_bytes) <= MAX_IMAGE_BYTES
+
+        result = preprocessor.preprocess(image_bytes)
+        # パススルーなので完全に同一
+        assert result == image_bytes
+
+    def test_preprocess_returns_valid_image(self, preprocessor):
+        """preprocess()の出力がデコード可能な画像であることを確認"""
         image_bytes = _create_test_image()
         result = preprocessor.preprocess(image_bytes)
 
-        # 出力をデコードして有効な画像であることを確認
         nparr = np.frombuffer(result, np.uint8)
-        decoded = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        decoded = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         assert decoded is not None
 
-    def test_preprocess_output_is_grayscale(self, preprocessor):
-        """preprocess()の出力がグレースケール（1チャンネル）であることを確認"""
-        image_bytes = _create_test_image(color=True)
-        result = preprocessor.preprocess(image_bytes)
-
-        nparr = np.frombuffer(result, np.uint8)
-        decoded = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
-        # 二値化後の画像は1チャンネル
-        assert len(decoded.shape) == 2
-
-    def test_preprocess_output_is_binary(self, preprocessor):
-        """preprocess()の出力が二値画像（0と255のみ）であることを確認"""
-        image_bytes = _create_test_image()
-        result = preprocessor.preprocess(image_bytes)
-
-        nparr = np.frombuffer(result, np.uint8)
-        decoded = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-
-        # 大津の二値化により、ピクセル値は0か255のいずれか
-        unique_values = np.unique(decoded)
-        assert all(v in [0, 255] for v in unique_values)
-
-    def test_preprocess_preserves_dimensions(self, preprocessor):
-        """preprocess()が画像のサイズを保持することを確認"""
+    def test_preprocess_preserves_dimensions_when_under_limit(self, preprocessor):
+        """上限以内の画像のサイズが保持されることを確認"""
         width, height = 300, 200
         image_bytes = _create_test_image(width=width, height=height)
         result = preprocessor.preprocess(image_bytes)
 
         nparr = np.frombuffer(result, np.uint8)
-        decoded = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-        assert decoded.shape == (height, width)
+        decoded = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        assert decoded.shape[:2] == (height, width)
 
-    def test_deskew_with_no_lines(self, preprocessor):
-        """_deskew()に直線のない画像を渡した場合、元の画像が返ることを確認"""
-        # 単色画像（直線なし）
-        img = np.ones((100, 100), dtype=np.uint8) * 128
-        result = preprocessor._deskew(img)
+    def test_preprocess_compresses_large_image(self, preprocessor):
+        """上限超過の画像がJPEG圧縮されて上限以内になる"""
+        large_image = _create_large_image()
 
-        # 元の画像と同一であること
-        np.testing.assert_array_equal(result, img)
+        # テスト前提: 画像が上限を超えていること
+        if len(large_image) <= MAX_IMAGE_BYTES:
+            pytest.skip("テスト画像が上限を超えていないためスキップ")
 
-    def test_deskew_with_horizontal_lines(self, preprocessor):
-        """_deskew()が水平線を含む画像に対して正常に動作することを確認"""
-        # 水平線のみの画像（傾きなし）
-        img = np.ones((200, 300), dtype=np.uint8) * 255
-        cv2.line(img, (20, 100), (280, 100), 0, 2)
-        cv2.line(img, (20, 150), (280, 150), 0, 2)
+        result = preprocessor.preprocess(large_image)
+        assert len(result) <= MAX_IMAGE_BYTES
 
-        result = preprocessor._deskew(img)
-        # サイズが保持されること
-        assert result.shape == img.shape
+    def test_preprocess_compressed_output_is_jpeg(self, preprocessor):
+        """上限超過時の出力がJPEG形式になる"""
+        large_image = _create_large_image()
 
-    def test_preprocess_with_skewed_image(self, preprocessor):
-        """傾いた画像に対してpreprocess()が正常に動作することを確認"""
-        image_bytes = _create_skewed_image(angle_deg=3.0)
+        if len(large_image) <= MAX_IMAGE_BYTES:
+            pytest.skip("テスト画像が上限を超えていないためスキップ")
+
+        result = preprocessor.preprocess(large_image)
+        # JPEG先頭バイト: 0xFF 0xD8
+        assert result[:2] == b'\xff\xd8'
+
+    def test_preprocess_with_invalid_data_returns_original(self, preprocessor):
+        """無効なデータを渡した場合、元のデータがそのまま返される"""
+        invalid_bytes = b"this is not an image"
+        # 上限超過サイズにする（圧縮パスに入るため）
+        large_invalid = invalid_bytes * (MAX_IMAGE_BYTES // len(invalid_bytes) + 1)
+        result = preprocessor.preprocess(large_invalid)
+        # 圧縮に失敗して元のデータが返される
+        assert result == large_invalid
+
+    def test_preprocess_color_image_stays_color(self, preprocessor):
+        """カラー画像はカラーのまま返される（グレースケール変換なし）"""
+        image_bytes = _create_test_image(color=True)
         result = preprocessor.preprocess(image_bytes)
 
-        # 有効なPNG出力
-        assert isinstance(result, bytes)
         nparr = np.frombuffer(result, np.uint8)
-        decoded = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-        assert decoded is not None
+        decoded = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+        # カラー画像は3チャンネル
+        assert len(decoded.shape) == 3
+        assert decoded.shape[2] == 3

@@ -17,6 +17,7 @@ export default function ResultPage() {
   const params = useParams();
   const fileId = params.id as string;
 
+  // state管理
   const [document, setDocument] = useState<OcrDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

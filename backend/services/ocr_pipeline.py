@@ -3,10 +3,16 @@ OCRパイプラインオーケストレーション
 
 PDF読み込み→画像前処理→Claude Sonnet 4（画像直接OCR）→ProcessingResult
 の一連のパイプラインを管理する。
-Textractは使用しない（MVP構成）。
+
+パフォーマンス最適化:
+  - 各処理段階の所要時間を計測ログとして出力
+  - CPU集約的処理はasyncio.to_threadでスレッドプール実行
+  - Claude API呼び出しは1回のみ（1段階統合方式）
 """
 
+import asyncio
 import logging
+import time
 import traceback
 from datetime import datetime
 
@@ -21,6 +27,7 @@ from backend.models.schemas import (
 from backend.services.claude_client import ClaudeClient
 from backend.services.image_preprocessor import ImagePreprocessor
 from backend.services.pdf_reader import PdfReader
+from backend.services.validator import Validator
 
 logger = logging.getLogger(__name__)
 
@@ -32,21 +39,49 @@ class OcrPipeline:
         self.pdf_reader = PdfReader()
         self.image_preprocessor = ImagePreprocessor()
         self.claude_client = ClaudeClient()
+        self.validator = Validator()
 
-    async def process(self, file_id: str, pdf_bytes: bytes) -> ProcessingResult:
+    async def process(
+        self,
+        file_id: str,
+        pdf_bytes: bytes,
+        progress_callback=None,
+    ) -> ProcessingResult:
         """
         OCRパイプラインのメイン処理
 
         処理フロー:
-        1. PyMuPDF: PDF→ページ画像変換
-        2. 画像前処理（パススルー）
-        3. Claude Sonnet 4: 画像から直接OCR+フィールド抽出
-        4. ProcessingResult構築
+        1. PyMuPDF: PDF→ページ画像変換 (10%→25%)
+        2. 画像前処理（サイズ圧縮） (25%→35%)
+        3. Claude Sonnet 4: 画像から直接OCR+フィールド抽出 (35%→80%)
+        4. ProcessingResult構築 (80%→85%)
+
+        Args:
+            progress_callback: 進捗更新コールバック(progress: int) -> None
         """
+        def _update_progress(p: int):
+            if progress_callback:
+                progress_callback(p)
+
+        pipeline_start = time.perf_counter()
+
         try:
-            # Step 1: PDF読み込み
-            logger.info(f"[{file_id}] PDF読み込み開始")
-            page_images = self.pdf_reader.read_pages(pdf_bytes)
+            # Step 1: PDF読み込み（CPU集約的なためスレッドプールで実行）
+            logger.info(f"[{file_id}] PDF読み込み開始 (入力サイズ: {len(pdf_bytes)/1024:.0f}KB)")
+            _update_progress(15)
+
+            t0 = time.perf_counter()
+            page_images = await asyncio.to_thread(
+                self.pdf_reader.read_pages, pdf_bytes
+            )
+            t_pdf = time.perf_counter() - t0
+            logger.info(
+                f"[{file_id}] PDF読み込み完了: {t_pdf:.2f}秒, "
+                f"ページ数={len(page_images)}, "
+                f"1ページ目サイズ={len(page_images[0])/1024:.0f}KB"
+                if page_images else f"[{file_id}] PDF読み込み完了: {t_pdf:.2f}秒, ページなし"
+            )
+            _update_progress(25)
 
             if not page_images:
                 return self._create_error_result(
@@ -56,19 +91,66 @@ class OcrPipeline:
             # MVP: 最初のページのみ処理
             first_page_image = page_images[0]
 
-            # Step 2: 画像前処理（パススルー）
-            logger.info(f"[{file_id}] 画像前処理開始")
-            preprocessed_image = self.image_preprocessor.preprocess(first_page_image)
+            # Step 2: 画像前処理（CPU集約的なためスレッドプールで実行）
+            logger.info(f"[{file_id}] 画像前処理開始 (入力サイズ: {len(first_page_image)/1024:.0f}KB)")
+            _update_progress(30)
 
-            # Step 3: Claude Sonnet 4で画像から直接OCR+抽出
-            logger.info(f"[{file_id}] Claude Sonnet 4 OCR開始")
+            t1 = time.perf_counter()
+            preprocessed_image = await asyncio.to_thread(
+                self.image_preprocessor.preprocess, first_page_image
+            )
+            t_preprocess = time.perf_counter() - t1
+            logger.info(
+                f"[{file_id}] 画像前処理完了: {t_preprocess:.2f}秒, "
+                f"出力サイズ={len(preprocessed_image)/1024:.0f}KB"
+            )
+            _update_progress(35)
+
+            # Step 3: Claude Sonnet 4で画像から直接OCR+抽出（1回のAPI呼び出し）
+            logger.info(f"[{file_id}] Claude Sonnet 4 OCR開始 (画像サイズ: {len(preprocessed_image)/1024:.0f}KB)")
+            _update_progress(40)
+
+            t2 = time.perf_counter()
             claude_result = await self.claude_client.extract_fields_from_image(
                 preprocessed_image
             )
+            t_claude = time.perf_counter() - t2
+            logger.info(
+                f"[{file_id}] Claude OCR完了: {t_claude:.2f}秒, "
+                f"抽出フィールド数={len(claude_result.extracted_fields)}"
+            )
+            _update_progress(80)
 
             # Step 4: ProcessingResult構築
             logger.info(f"[{file_id}] 処理結果構築")
             document = self._build_document(file_id, claude_result)
+            _update_progress(85)
+
+            # Step 5: 金融機関マスター検証
+            logger.info(f"[{file_id}] 金融機関マスター検証開始")
+            t3 = time.perf_counter()
+            try:
+                master_errors = await self.validator.check_financial_codes(
+                    document.fields
+                )
+                document.validation_errors.extend(master_errors)
+                # コード補完（銀行番号/店番号が空の場合にマスターから自動決定）
+                self.validator.complement_codes(document.fields)
+            except Exception as e:
+                logger.warning(
+                    f"[{file_id}] 金融機関マスター検証でエラー（処理継続）: {e}"
+                )
+            t_master = time.perf_counter() - t3
+            logger.info(f"[{file_id}] 金融機関マスター検証完了: {t_master:.2f}秒")
+            _update_progress(90)
+
+            # パイプライン全体の計測ログ
+            total_time = time.perf_counter() - pipeline_start
+            logger.info(
+                f"[{file_id}] パイプライン完了: 合計{total_time:.2f}秒 "
+                f"(PDF:{t_pdf:.2f}s + 前処理:{t_preprocess:.2f}s + "
+                f"Claude:{t_claude:.2f}s + マスター検証:{t_master:.2f}s)"
+            )
 
             return ProcessingResult(
                 document=document,
@@ -77,8 +159,9 @@ class OcrPipeline:
             )
 
         except Exception as e:
+            total_time = time.perf_counter() - pipeline_start
             logger.error(
-                f"[{file_id}] OCRパイプライン処理中にエラー: "
+                f"[{file_id}] OCRパイプライン処理中にエラー ({total_time:.2f}秒経過): "
                 f"{type(e).__name__}: {e}"
             )
             logger.error(
@@ -110,43 +193,28 @@ class OcrPipeline:
             visual_checks=[],
             consignor_number=field_map.get("委託者番号"),
             contract_number=field_map.get("契約者番号"),
-            bank_name=None,
-            branch_name=None,
+            bank_name=field_map.get("銀行名"),
+            branch_name=field_map.get("支店名"),
             bank_code=field_map.get("銀行番号"),
-            branch_code=field_map.get("支店番号"),
+            branch_code=field_map.get("店番号"),
             account_number=field_map.get("口座番号"),
-            depositor_name=field_map.get("預金者名氏名"),
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        )
-
-        return OcrDocument(
-            file_id=file_id,
-            original_filename="",
-            form_type=claude_result.form_type,
-            status=status,
-            fields=fields,
-            validation_errors=[],
-            visual_checks=[],
-            consignor_number=consignor_number,
-            contract_number=contract_number,
-            bank_name=None,
-            branch_name=None,
-            bank_code=field_map.get("銀行番号"),
-            branch_code=field_map.get("支店番号"),
-            account_number=None,
-            depositor_name=None,
+            depositor_name=field_map.get("預金者氏名"),
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
 
     def _apply_confidence_level(self, field: OcrField) -> OcrField:
-        """ConfidenceLevel判定"""
-        confidence_level = (
-            ConfidenceLevel.HIGH
-            if field.confidence_score >= CONFIDENCE_THRESHOLD
-            else ConfidenceLevel.LOW
-        )
+        """ConfidenceLevel判定
+        値がnull（空欄）のフィールドはconfidence判定不要（空欄は正常なのでHIGH扱い）
+        """
+        if not field.value:
+            confidence_level = ConfidenceLevel.HIGH
+        else:
+            confidence_level = (
+                ConfidenceLevel.HIGH
+                if field.confidence_score >= CONFIDENCE_THRESHOLD
+                else ConfidenceLevel.LOW
+            )
 
         return OcrField(
             field_name=field.field_name,

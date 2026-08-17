@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import FileDropzone from '@/components/upload/FileDropzone';
 import UploadProgress from '@/components/upload/UploadProgress';
 import StatusBadge from '@/components/common/StatusBadge';
-import { uploadFiles } from '@/lib/api';
+import { uploadFiles, batchUpload } from '@/lib/api';
 import type { UploadResponse } from '@/types';
 
 /**
  * アップロード画面
+ * バッチ処理モード（複数PDF一括アップロード）に対応
  */
 export default function UploadPage() {
   const router = useRouter();
@@ -25,24 +26,32 @@ export default function UploadPage() {
     setError(null);
   };
 
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
 
     setIsUploading(true);
     setError(null);
-    setUploadStatus('OCR処理中...');
 
     try {
-      const response = await uploadFiles(selectedFiles);
-      setResults(response);
-      setUploadStatus('完了');
-
-      if (response.files.length === 1) {
-        router.push(`/result/${response.files[0].file_id}`);
-      }
+      // バッチ処理モード: バッチアップロードAPIを使用し、管理画面へ遷移
+      setUploadStatus(`${selectedFiles.length}件のファイルをアップロード中...`);
+      const response = await batchUpload(selectedFiles);
+      setUploadStatus('アップロード完了。バッチ管理画面に移動します...');
+      
+      // 初期ファイル一覧をsessionStorageに保存（バッチ画面で即座に表示するため）
+      sessionStorage.setItem(
+        `batch_initial_${response.batch_id}`,
+        JSON.stringify(response.files)
+      );
+      
+      // バッチ管理画面へ遷移（total_filesをクエリパラメータで渡す）
+      router.push(`/batch/${response.batch_id}?total=${response.total_files}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました');
-    } finally {
       setIsUploading(false);
     }
   };
@@ -71,31 +80,40 @@ export default function UploadPage() {
         <div className="relative z-10 max-w-4xl mx-auto px-6 py-12">
           <div className="text-center mb-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              口座振替依頼書 OCR処理
+              口座振替依頼書 OCRバッチ処理
             </h2>
             <p className="text-sm text-gray-500">
-              PDF形式の口座振替依頼書をアップロードしてください
+              PDF形式の口座振替依頼書をアップロードしてください（最大100件まで一括処理可能）
             </p>
           </div>
 
         {/* ドロップゾーン */}
         {!results && (
           <div className="w-full max-w-lg mx-auto">
-            <FileDropzone onFilesSelected={handleFilesSelected} />
+            <FileDropzone onFilesSelected={handleFilesSelected} existingFiles={selectedFiles} />
           </div>
         )}
 
         {/* 選択済みファイル一覧 */}
         {selectedFiles.length > 0 && !isUploading && !results && (
           <div className="w-full max-w-lg mx-auto mt-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">
-              選択済みファイル（{selectedFiles.length}件）
-            </h3>
-            <ul className="space-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-700">
+                選択済みファイル（{selectedFiles.length}件）
+              </h3>
+              <button
+                onClick={() => setSelectedFiles([])}
+                className="text-xs text-gray-400 hover:text-red-500 transition-colors duration-150"
+                aria-label="すべて削除"
+              >
+                すべて削除
+              </button>
+            </div>
+            <ul className="space-y-1 max-h-[440px] overflow-y-auto pr-1">
               {selectedFiles.map((file, index) => (
                 <li
-                  key={`${file.name}-${index}`}
-                  className="flex items-center text-sm text-gray-600 bg-white rounded-lg px-4 py-2.5 border border-gray-200"
+                  key={`${file.name}-${file.size}-${index}`}
+                  className="flex items-center text-sm text-gray-600 bg-white rounded-lg px-4 py-2.5 border border-gray-200 group"
                 >
                   <svg
                     className="w-4 h-4 mr-2 text-red-500 flex-shrink-0"
@@ -105,13 +123,28 @@ export default function UploadPage() {
                   >
                     <path d="M4 18h12a2 2 0 002-2V6l-4-4H4a2 2 0 00-2 2v12a2 2 0 002 2zm8-14l4 4h-4V4z" />
                   </svg>
-                  <span className="truncate">{file.name}</span>
-                  <span className="ml-auto text-xs text-gray-400">
+                  <span className="truncate flex-1">{file.name}</span>
+                  <span className="ml-2 text-xs text-gray-400 flex-shrink-0">
                     {(file.size / 1024).toFixed(0)} KB
                   </span>
+                  <button
+                    onClick={() => handleRemoveFile(index)}
+                    className="ml-3 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors duration-150 flex-shrink-0"
+                    aria-label={`${file.name}を削除`}
+                    title="削除"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </li>
               ))}
             </ul>
+            {selectedFiles.length > 10 && (
+              <p className="text-center text-xs text-gray-400 mt-1">
+                ↕ スクロールで全件を確認
+              </p>
+            )}
 
             <button
               onClick={handleUpload}

@@ -6,8 +6,10 @@ pymupdf
 opencv-python-headless
 boto3
 tenacity
+openpyxl
+rapidfuzz
+httpx
 hypothesis
 pytest
 pytest-asyncio
-httpx
 moto

@@ -87,6 +87,28 @@ try:
 except Exception as e:
     logger.error(f"result router 登録失敗: {e}", exc_info=True)
 
+try:
+    from backend.routers.batch import router as batch_router
+    app.include_router(batch_router)
+    logger.info("batch router 登録成功")
+except Exception as e:
+    logger.error(f"batch router 登録失敗: {e}", exc_info=True)
+
+
+# === 起動時イベント: 金融機関マスター初期化 ===
+
+
+@app.on_event("startup")
+async def startup_load_zengin_master():
+    """FastAPI起動時に金融機関マスターデータをロード"""
+    from backend.services.zengin_master import ZenginMasterService
+
+    try:
+        await ZenginMasterService.initialize()
+        logger.info("金融機関マスター初期化完了")
+    except Exception as e:
+        logger.error(f"金融機関マスター初期化失敗（OCR処理は継続可能）: {e}", exc_info=True)
+
 
 # === ヘルスチェックエンドポイント ===
 
