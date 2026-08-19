@@ -149,8 +149,8 @@ function MasterMatchDetail({ masterMatch }: { masterMatch: MasterMatchInfo }) {
         </div>
         {/* 候補リスト（番号逆引きと名前マッチで改行分割） */}
         {masterMatch.candidates.length > 0 && (() => {
-          const codeCandidates = masterMatch.candidates.filter(c => c.name.includes('（番号'));
-          const nameCandidates = masterMatch.candidates.filter(c => !c.name.includes('（番号'));
+          const codeCandidates = masterMatch.candidates.filter(c => c.name.includes('（番号') || c.name.includes('（コード'));
+          const nameCandidates = masterMatch.candidates.filter(c => !c.name.includes('（番号') && !c.name.includes('（コード'));
           return (
             <div className="text-[10px] space-y-0.5">
               {codeCandidates.length > 0 && (
@@ -293,7 +293,7 @@ function FinancialGroupMatchDetail({
             {codeLabel}マスタ一致: <span className="font-mono font-medium">{codeMatch.master_code}</span>
           </span>
           <span className="text-gray-500">
-            正しい{nameLabel}: <span className="font-bold text-amber-700">{codeMatch.master_value}</span>
+            正しい{nameLabel}: <span className="font-bold text-blue-700">{codeMatch.master_value}</span>
           </span>
           <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
             {nameLabel}不一致
@@ -609,7 +609,7 @@ export default function BatchFileDetail({
                   </div>
                   <div className="space-y-0">
                     {mainFields.map((fieldName) => {
-                      // 銀行名・銀行番号グループ
+                      // ------------------------------------- 銀行名・銀行番号グループ -------------------------------------
                       if (fieldName === '__bank_group__') {
                         const bankNameField = document.fields.find((f) => f.field_name === '銀行名');
                         const bankCodeField = document.fields.find((f) => f.field_name === '銀行番号');
@@ -624,7 +624,7 @@ export default function BatchFileDetail({
                           />
                         );
                       }
-                      // 支店名・店番号グループ
+                      // ------------------------------------- 支店名・店番号グループ -------------------------------------
                       if (fieldName === '__branch_group__') {
                         const branchNameField = document.fields.find((f) => f.field_name === '支店名');
                         const branchCodeField = document.fields.find((f) => f.field_name === '店番号');

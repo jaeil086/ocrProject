@@ -124,13 +124,24 @@ class Validator:
             bank_match = master.match_bank(ocr_bank_name)
             bank_name_field.master_match = bank_match
 
-            if bank_match.master_code:
+            # 銀行名マッチがOK（95%以上）の場合のみ、名前マッチからコードを確定
+            if bank_match.master_code and bank_match.match_status == "ok":
                 resolved_bank_code = bank_match.master_code
 
             # マスター照合結果がng/needs_reviewの場合、confidence_levelをLOWに
             if bank_match.match_status in ("ng", "needs_review"):
                 bank_name_field.confidence_level = ConfidenceLevel.LOW
 
+        # 銀行名マッチで確定できなかった場合、OCR銀行番号からの逆引きを試みる
+        if not resolved_bank_code and ocr_bank_code:
+            code_bank_info = master.get_bank_by_code(ocr_bank_code)
+            if code_bank_info:
+                resolved_bank_code = ocr_bank_code
+                logger.info(
+                    f"銀行名マッチで確定できず、OCR銀行番号{ocr_bank_code}から逆引き: {code_bank_info.name}"
+                )
+
+        if ocr_bank_name:
             # 銀行名↔銀行番号 交差検証
             if ocr_bank_code and resolved_bank_code:
                 if ocr_bank_code == resolved_bank_code:
@@ -154,26 +165,40 @@ class Validator:
                         f"銀行番号交差検証不一致: OCR={ocr_bank_code}, マスター={resolved_bank_code}"
                     )
 
-            # パターン3対応: 銀行名マッチングがOKでない＋交差検証不一致の場合
-            # OCR銀行番号から逆引きした候補も追加する
+            # パターン3対応: 銀行名マッチングがOKでない場合
+            # resolved_bank_code（名前マッチから確定）とOCR銀行番号の両方で逆引きして候補に追加
             if (
                 bank_name_field.master_match
                 and bank_name_field.master_match.match_status != "ok"
-                and ocr_bank_code
             ):
                 from backend.models.schemas import MasterMatchCandidate
-                code_bank_info = master.get_bank_by_code(ocr_bank_code)
-                if code_bank_info:
-                    # OCR銀行番号に対応するマスター銀行を候補の先頭に追加
-                    code_candidate = MasterMatchCandidate(
-                        name=f"{code_bank_info.name}（番号{ocr_bank_code}より）",
-                        code=code_bank_info.code,
-                        score=0.0,  # 名前マッチではないため0%
-                    )
-                    # 既存候補と重複しなければ先頭に挿入
-                    existing_codes = {c.code for c in bank_name_field.master_match.candidates}
-                    if code_bank_info.code not in existing_codes:
-                        bank_name_field.master_match.candidates.insert(0, code_candidate)
+
+                # OCR銀行番号から逆引き（ユーザーが実際に書いた番号を優先）
+                if ocr_bank_code:
+                    code_bank_info = master.get_bank_by_code(ocr_bank_code)
+                    if code_bank_info:
+                        code_candidate = MasterMatchCandidate(
+                            name=f"{code_bank_info.name}（番号{ocr_bank_code}より）",
+                            code=code_bank_info.code,
+                            score=0.0,
+                        )
+                        existing_codes = {c.code for c in bank_name_field.master_match.candidates}
+                        if code_bank_info.code not in existing_codes:
+                            bank_name_field.master_match.candidates.insert(0, code_candidate)
+
+                # resolved_bank_code（名前マッチから確定したコード）からも逆引き
+                if resolved_bank_code and resolved_bank_code != ocr_bank_code:
+                    code_bank_info = master.get_bank_by_code(resolved_bank_code)
+                    if code_bank_info:
+                        code_candidate = MasterMatchCandidate(
+                            name=f"{code_bank_info.name}（コード{resolved_bank_code}より）",
+                            code=code_bank_info.code,
+                            score=0.0,
+                        )
+                        existing_codes = {c.code for c in bank_name_field.master_match.candidates}
+                        if code_bank_info.code not in existing_codes:
+                            bank_name_field.master_match.candidates.insert(0, code_candidate)
+
                 # 候補数を5件に制限
                 bank_name_field.master_match.candidates = bank_name_field.master_match.candidates[:5]
 
@@ -192,12 +217,25 @@ class Validator:
                     )
                 else:
                     # OCR値とマスター値が不一致 → 候補として提示（OCR値は変更しない）
+                    # OCR銀行番号から逆引きした候補も追加
+                    code_candidates = []
+                    if ocr_bank_code:
+                        from backend.models.schemas import MasterMatchCandidate
+                        ocr_code_bank = master.get_bank_by_code(ocr_bank_code)
+                        if ocr_code_bank:
+                            code_candidates.append(MasterMatchCandidate(
+                                name=f"{ocr_code_bank.name}（番号{ocr_bank_code}より）",
+                                code=ocr_code_bank.code,
+                                score=0.0,
+                            ))
+
                     bank_code_field.master_match = MasterMatchInfo(
                         master_value=bank_info.name if bank_info else None,
                         master_code=resolved_bank_code,
                         match_score=0.0,  # OCR値とは不一致なので0%
                         match_status="needs_review",
                         cross_check_status="mismatch",
+                        candidates=code_candidates,
                     )
                     bank_code_field.confidence_level = ConfidenceLevel.LOW
                     logger.info(
@@ -241,13 +279,26 @@ class Validator:
             )
             branch_name_field.master_match = branch_match
 
-            if branch_match.master_code:
+            # 支店名マッチがOK（95%以上）の場合のみ、名前マッチからコードを確定
+            if branch_match.master_code and branch_match.match_status == "ok":
                 resolved_branch_code = branch_match.master_code
 
             # マスター照合結果がng/needs_reviewの場合、confidence_levelをLOWに
             if branch_match.match_status in ("ng", "needs_review"):
                 branch_name_field.confidence_level = ConfidenceLevel.LOW
 
+        # 支店名マッチで確定できなかった場合、OCR店番号からの逆引きを試みる
+        if not resolved_branch_code and ocr_branch_code and resolved_bank_code:
+            code_branch_info = await master.get_branch_by_code(
+                resolved_bank_code, ocr_branch_code
+            )
+            if code_branch_info:
+                resolved_branch_code = ocr_branch_code
+                logger.info(
+                    f"支店名マッチで確定できず、OCR店番号{ocr_branch_code}から逆引き: {code_branch_info.name}"
+                )
+
+        if ocr_branch_name and resolved_bank_code:
             # 支店名↔店番号 交差検証
             if ocr_branch_code and resolved_branch_code:
                 if ocr_branch_code == resolved_branch_code:
@@ -322,12 +373,33 @@ class Validator:
                     )
                 else:
                     # OCR値とマスター値が不一致 → 候補として提示（OCR値は変更しない）
+                    # OCR店番号から逆引きした候補も追加
+                    code_candidates = []
+                    if ocr_branch_code:
+                        from backend.models.schemas import MasterMatchCandidate
+                        # resolved_bank_codeで検索
+                        ocr_code_branch = await master.get_branch_by_code(
+                            resolved_bank_code, ocr_branch_code
+                        )
+                        # 見つからなければOCR銀行番号で検索
+                        if not ocr_code_branch and ocr_bank_code and ocr_bank_code != resolved_bank_code:
+                            ocr_code_branch = await master.get_branch_by_code(
+                                ocr_bank_code, ocr_branch_code
+                            )
+                        if ocr_code_branch:
+                            code_candidates.append(MasterMatchCandidate(
+                                name=f"{ocr_code_branch.name}（番号{ocr_branch_code}より）",
+                                code=ocr_code_branch.code,
+                                score=0.0,
+                            ))
+
                     branch_code_field.master_match = MasterMatchInfo(
                         master_value=branch_info.name if branch_info else None,
                         master_code=resolved_branch_code,
                         match_score=0.0,  # OCR値とは不一致なので0%
                         match_status="needs_review",
                         cross_check_status="mismatch",
+                        candidates=code_candidates,
                     )
                     branch_code_field.confidence_level = ConfidenceLevel.LOW
                     logger.info(
