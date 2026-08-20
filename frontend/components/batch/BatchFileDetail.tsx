@@ -266,7 +266,12 @@ function FinancialGroupMatchDetail({
     || codeMatch?.cross_check_status === 'mismatch';
 
   // パターン1: 名前OK + コード不一致（名前は正しく読めたが、番号がOCR誤読）
+  // ただし逆（名前がOCR誤読でたまたまマスター一致）の可能性もあるため、番号逆引き候補も表示
   if (nameIsOk && hasCrossCheckMismatch && primaryMatch) {
+    // コードフィールドに逆引き候補があれば表示する
+    const codeReverseCandidate = codeMatch?.candidates?.filter(
+      c => c.name.includes('（番号') || c.name.includes('（コード')
+    ) || [];
     return (
       <div className="space-y-0.5 text-[10px]">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
@@ -280,12 +285,25 @@ function FinancialGroupMatchDetail({
             {codeLabel}不一致
           </span>
         </div>
+        {/* 番号からの逆引き候補（名前の誤読の可能性を示唆） */}
+        {codeReverseCandidate.length > 0 && (
+          <div className="text-gray-500">
+            番号から: {codeReverseCandidate.slice(0, 2).map((c, i) => (
+              <span key={i} className="mr-1.5">
+                <span className="font-medium text-blue-700">{c.name}</span>
+                <span className="font-mono text-gray-400"> [{c.code}]</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
 
   // パターン2: コードOK + 名前不一致（番号は正しいが、名前をOCR誤読）
   if (codeIsOk && codeMatch && !nameIsOk && primaryMatch) {
+    const codeCandidatesP2 = primaryMatch.candidates.filter(c => c.name.includes('（番号') || c.name.includes('（コード'));
+    const nameCandidatesP2 = primaryMatch.candidates.filter(c => !c.name.includes('（番号') && !c.name.includes('（コード'));
     return (
       <div className="space-y-0.5 text-[10px]">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
@@ -299,10 +317,21 @@ function FinancialGroupMatchDetail({
             {nameLabel}不一致
           </span>
         </div>
-        {/* 名前の候補リスト */}
-        {primaryMatch.candidates.length > 0 && (
+        {/* 番号逆引き候補 */}
+        {codeCandidatesP2.length > 0 && (
+          <div className="text-gray-500">
+            番号から: {codeCandidatesP2.slice(0, 2).map((c, i) => (
+              <span key={i} className="mr-1.5">
+                <span className="font-medium text-blue-700">{c.name}</span>
+                <span className="font-mono text-gray-400"> [{c.code}]</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {/* 名前マッチ候補（0%は除外） */}
+        {nameCandidatesP2.length > 0 && (
           <div className="text-gray-400">
-            候補: {primaryMatch.candidates.slice(0, 5).map((c, i) => (
+            候補: {nameCandidatesP2.slice(0, 5).map((c, i) => (
               <span key={i} className="mr-1.5">
                 <span className="text-gray-600">{c.name}</span>
                 <span className="font-mono text-gray-400"> [{c.code}]</span>
