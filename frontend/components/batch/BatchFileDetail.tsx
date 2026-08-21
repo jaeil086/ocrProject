@@ -57,6 +57,21 @@ function InlineCheckBadge({ field, allFields }: { field: OcrField; allFields?: O
         </span>
       );
     }
+
+    // 銀行番号・店番号は必須確認項目 → 空欄の場合は「NG 未記入」と表示
+    const requiredCodeFields = ['銀行番号', '店番号'];
+    if (requiredCodeFields.includes(field.field_name)) {
+      return (
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
+            NG
+          </span>
+          <span className="text-[10px] text-red-400">
+            未記入
+          </span>
+        </span>
+      );
+    }
   }
 
   if (!field.value) {

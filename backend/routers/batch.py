@@ -169,6 +169,10 @@ async def _process_single_file(
         # バリデーション実行（progress: 85%）
         batch_store.update_file_progress(batch_id, file_id, 85)
         batch_store.add_file_log(batch_id, file_id, "バリデーション実行中")
+
+        # 銀行番号/店番号の桁数チェック・入れ替わり修正
+        _validator.fix_swapped_bank_branch_codes(document.fields)
+
         if document.form_type:
             missing_errors = _validator.check_missing_fields(
                 document.fields, document.form_type
@@ -179,9 +183,6 @@ async def _process_single_file(
         financial_errors = await _validator.check_financial_codes(document.fields)
         all_errors = missing_errors + financial_errors
         document.validation_errors = all_errors
-
-        # 金融機関コード補完
-        document.fields = _validator.complement_codes(document.fields)
 
         # 書類仕分け
         document.status = _classifier.classify(

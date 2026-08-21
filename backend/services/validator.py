@@ -74,6 +74,53 @@ class Validator:
 
         return errors
 
+    def fix_swapped_bank_branch_codes(self, fields: list[OcrField]) -> list[OcrField]:
+        """
+        銀行番号(4桁)と店番号(3桁)の入れ替わりを桁数で検出し修正する。
+
+        ClaudeのOCRが銀行番号と店番号を取り違えるハルシネーションに対応。
+        - 銀行番号は必ず4桁
+        - 店番号は必ず3桁
+        これに反する場合は入れ替わりを修正する。
+        """
+        field_map = {f.field_name: f for f in fields}
+        bank_code_field = field_map.get("銀行番号")
+        branch_code_field = field_map.get("店番号")
+
+        bank_code = bank_code_field.value if bank_code_field else None
+        branch_code = branch_code_field.value if branch_code_field else None
+
+        # 両方に値がある場合: 桁数が逆なら入れ替え
+        if bank_code and branch_code:
+            if len(bank_code) == 3 and len(branch_code) == 4:
+                # 入れ替わっている → 修正
+                logger.warning(
+                    f"銀行番号と店番号の入れ替わりを検出・修正: "
+                    f"銀行番号={bank_code}(3桁)→{branch_code}, 店番号={branch_code}(4桁)→{bank_code}"
+                )
+                bank_code_field.value = branch_code
+                branch_code_field.value = bank_code
+
+        # 片方だけに値がある場合: 桁数が正しくなければ入れ替え
+        elif bank_code and not branch_code:
+            if len(bank_code) == 3:
+                # 3桁の値が銀行番号に入っている → 店番号のはず
+                logger.warning(
+                    f"銀行番号に3桁の値を検出（店番号の誤配置）: {bank_code} → 店番号に移動"
+                )
+                branch_code_field.value = bank_code
+                bank_code_field.value = None
+        elif branch_code and not bank_code:
+            if len(branch_code) == 4:
+                # 4桁の値が店番号に入っている → 銀行番号のはず
+                logger.warning(
+                    f"店番号に4桁の値を検出（銀行番号の誤配置）: {branch_code} → 銀行番号に移動"
+                )
+                bank_code_field.value = branch_code
+                branch_code_field.value = None
+
+        return fields
+
     async def check_financial_codes(
         self, fields: list[OcrField]
     ) -> list[ValidationError]:
@@ -203,7 +250,8 @@ class Validator:
                 bank_name_field.master_match.candidates = bank_name_field.master_match.candidates[:5]
 
         # 銀行番号フィールドにマスター情報を付与
-        if bank_code_field:
+        # ※ OCR銀行番号が空欄の場合はマスター照合を行わない（空欄に推測値を入れない）
+        if bank_code_field and ocr_bank_code:
             if resolved_bank_code:
                 # マスターで銀行コードが確定している場合
                 bank_info = master.get_bank_by_code(resolved_bank_code)
@@ -219,15 +267,14 @@ class Validator:
                     # OCR値とマスター値が不一致 → 候補として提示（OCR値は変更しない）
                     # OCR銀行番号から逆引きした候補も追加
                     code_candidates = []
-                    if ocr_bank_code:
-                        from backend.models.schemas import MasterMatchCandidate
-                        ocr_code_bank = master.get_bank_by_code(ocr_bank_code)
-                        if ocr_code_bank:
-                            code_candidates.append(MasterMatchCandidate(
-                                name=f"{ocr_code_bank.name}（番号{ocr_bank_code}より）",
-                                code=ocr_code_bank.code,
-                                score=0.0,
-                            ))
+                    from backend.models.schemas import MasterMatchCandidate
+                    ocr_code_bank = master.get_bank_by_code(ocr_bank_code)
+                    if ocr_code_bank:
+                        code_candidates.append(MasterMatchCandidate(
+                            name=f"{ocr_code_bank.name}（番号{ocr_bank_code}より）",
+                            code=ocr_code_bank.code,
+                            score=0.0,
+                        ))
 
                     bank_code_field.master_match = MasterMatchInfo(
                         master_value=bank_info.name if bank_info else None,
@@ -241,7 +288,7 @@ class Validator:
                     logger.info(
                         f"銀行番号不一致（候補提示）: OCR={ocr_bank_code}, マスター候補={resolved_bank_code}"
                     )
-            elif ocr_bank_code:
+            else:
                 # 銀行名からコード確定できなかった場合、OCR銀行番号をマスターで検証
                 bank_info = master.get_bank_by_code(ocr_bank_code)
                 if bank_info:
@@ -357,7 +404,8 @@ class Validator:
                 branch_name_field.master_match.candidates = branch_name_field.master_match.candidates[:5]
 
         # 店番号フィールドにマスター情報を付与
-        if branch_code_field and resolved_bank_code:
+        # ※ OCR店番号が空欄の場合はマスター照合を行わない（空欄に推測値を入れない）
+        if branch_code_field and ocr_branch_code and resolved_bank_code:
             if resolved_branch_code:
                 # マスターで支店コードが確定している場合
                 branch_info = await master.get_branch_by_code(
@@ -405,7 +453,7 @@ class Validator:
                     logger.info(
                         f"店番号不一致（候補提示）: OCR={ocr_branch_code}, マスター候補={resolved_branch_code}"
                     )
-            elif ocr_branch_code:
+            else:
                 # 支店名からコード確定できなかった場合、OCR店番号をマスターで検証
                 branch_info = await master.get_branch_by_code(
                     resolved_bank_code, ocr_branch_code
@@ -431,49 +479,4 @@ class Validator:
 
         return errors
 
-    def complement_codes(self, fields: list[OcrField]) -> list[OcrField]:
-        """
-        マスター照合結果に基づき、コードを補完する。
-        - 銀行名から銀行番号、支店名から店番号を自動決定（空欄の場合）
-        - 交差検証でmismatchの場合は既にcheck_financial_codes()で補正済み
-        """
-        if not ZenginMasterService.is_initialized():
-            return fields
 
-        field_map = {f.field_name: f for f in fields}
-
-        # 銀行番号が空欄で、銀行名マスター照合がOKの場合 → 自動補完
-        bank_name_field = field_map.get("銀行名")
-        bank_code_field = field_map.get("銀行番号")
-
-        if (
-            bank_name_field
-            and bank_name_field.master_match
-            and bank_name_field.master_match.match_status == "ok"
-            and bank_name_field.master_match.master_code
-        ):
-            # 値が空欄、かつまだ補正されていない場合のみ
-            if bank_code_field and not bank_code_field.value and not bank_code_field.corrected_value:
-                bank_code_field.corrected_value = bank_name_field.master_match.master_code
-                logger.info(
-                    f"銀行番号を自動補完: {bank_name_field.master_match.master_code}"
-                )
-
-        # 店番号が空欄で、支店名マスター照合がOKの場合 → 自動補完
-        branch_name_field = field_map.get("支店名")
-        branch_code_field = field_map.get("店番号")
-
-        if (
-            branch_name_field
-            and branch_name_field.master_match
-            and branch_name_field.master_match.match_status == "ok"
-            and branch_name_field.master_match.master_code
-        ):
-            # 値が空欄、かつまだ補正されていない場合のみ
-            if branch_code_field and not branch_code_field.value and not branch_code_field.corrected_value:
-                branch_code_field.corrected_value = branch_name_field.master_match.master_code
-                logger.info(
-                    f"店番号を自動補完: {branch_name_field.master_match.master_code}"
-                )
-
-        return fields
