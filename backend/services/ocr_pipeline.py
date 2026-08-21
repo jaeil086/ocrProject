@@ -128,6 +128,8 @@ class OcrPipeline:
 
             # Step 5: 銀行番号/店番号の桁数チェック・入れ替わり修正
             self.validator.fix_swapped_bank_branch_codes(document.fields)
+            # ゆうちょ記号/番号の桁数チェック・区切り修正
+            self.validator.fix_yucho_codes(document.fields)
 
             # Step 6: 金融機関マスター検証
             logger.info(f"[{file_id}] 金融機関マスター検証開始")

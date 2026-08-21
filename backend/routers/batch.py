@@ -37,6 +37,7 @@ from backend.services.batch_store import batch_store
 from backend.services.csv_generator import CsvGenerator
 from backend.services.document_classifier import DocumentClassifier
 from backend.services.ocr_pipeline import OcrPipeline
+from backend.services.s3_storage import s3_storage
 from backend.services.store import store
 from backend.services.validator import Validator
 
@@ -172,6 +173,8 @@ async def _process_single_file(
 
         # 銀行番号/店番号の桁数チェック・入れ替わり修正
         _validator.fix_swapped_bank_branch_codes(document.fields)
+        # ゆうちょ記号/番号の桁数チェック・区切り修正
+        _validator.fix_yucho_codes(document.fields)
 
         if document.form_type:
             missing_errors = _validator.check_missing_fields(
@@ -248,6 +251,18 @@ async def _process_single_file(
         )
 
 
+async def _upload_input_to_s3(
+    batch_id: str, pdf_files: list[tuple[str, bytes]]
+) -> None:
+    """入力PDFをZIP化してS3にアップロードする（バックグラウンド実行）"""
+    try:
+        await asyncio.to_thread(
+            s3_storage.upload_input_zip, batch_id, pdf_files
+        )
+    except Exception as e:
+        logger.error(f"[バッチ {batch_id}] S3入力ZIPアップロード失敗: {e}")
+
+
 async def _process_batch(
     batch_id: str, file_data_list: list[tuple[str, bytes]]
 ) -> None:
@@ -274,6 +289,53 @@ async def _process_batch(
     await asyncio.gather(*tasks, return_exceptions=True)
 
     logger.info(f"[バッチ {batch_id}] 全ファイル処理完了")
+
+    # 全ファイル処理完了後、結果をS3に自動保存
+    await _save_results_to_s3(batch_id)
+
+
+async def _save_results_to_s3(batch_id: str) -> None:
+    """バッチ処理完了後、結果Excel・アーカイブZIPをS3に自動保存する"""
+    try:
+        job = batch_store.get_job(batch_id)
+        if not job:
+            return
+
+        # --- 01_output: 全体結果Excelを生成して保存 ---
+        rows = []
+        for file_item in job.files:
+            if file_item.status in (
+                BatchFileStatus.COMPLETED,
+                BatchFileStatus.NEEDS_REVIEW,
+            ):
+                document = store.get(file_item.file_id)
+                if document:
+                    rows.append(_build_csv_row(document, file_item))
+
+        if rows:
+            excel_bytes = _csv_generator.generate_excel(rows)
+            await asyncio.to_thread(
+                s3_storage.upload_output_excel, batch_id, excel_bytes
+            )
+
+        # --- 02_archive: 全原本PDFのZIPを生成して保存 ---
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_item in job.files:
+                pdf_bytes = store.get_pdf(file_item.file_id)
+                if pdf_bytes:
+                    zf.writestr(file_item.batch_filename, pdf_bytes)
+        zip_buffer.seek(0)
+
+        if zip_buffer.getbuffer().nbytes > 22:
+            await asyncio.to_thread(
+                s3_storage.upload_archive_zip, batch_id, zip_buffer.getvalue()
+            )
+
+        logger.info(f"[バッチ {batch_id}] S3自動保存完了（結果Excel + アーカイブZIP）")
+
+    except Exception as e:
+        logger.error(f"[バッチ {batch_id}] S3自動保存失敗: {e}")
 
 
 @router.post("/upload", response_model=BatchUploadResponse)
@@ -327,6 +389,13 @@ async def batch_upload(
             batch_id, file_id, f"アップロード完了: {original_filename}"
         )
         file_data_list.append((file_id, pdf_bytes))
+
+    # 入力PDFをZIP化してS3にアップロード（バックグラウンド）
+    pdf_files_for_s3 = [
+        (files[i].filename or f"file_{i+1}.pdf", pdf_bytes)
+        for i, (_, pdf_bytes) in enumerate(file_data_list)
+    ]
+    asyncio.create_task(_upload_input_to_s3(batch_id, pdf_files_for_s3))
 
     # バックグラウンドでOCR処理を開始（asyncio.create_taskで即時起動）
     # BackgroundTasksはレスポンス送信完了後に実行されるため、

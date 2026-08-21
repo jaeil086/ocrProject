@@ -121,6 +121,50 @@ class Validator:
 
         return fields
 
+    def fix_yucho_codes(self, fields: list[OcrField]) -> list[OcrField]:
+        """
+        ゆうちょ記号(5桁)と番号(最大8桁)の抽出ミスを検出し修正する。
+
+        ClaudeのOCRが記号と番号の区切り位置を間違えるケースに対応。
+        - ゆうちょ記号は必ず5桁
+        - ゆうちょ番号は最大8桁
+        記号が5桁でない場合、番号と結合して再分割を試みる。
+        """
+        field_map = {f.field_name: f for f in fields}
+        kigo_field = field_map.get("ゆうちょ記号")
+        bango_field = field_map.get("ゆうちょ番号")
+
+        kigo = kigo_field.value if kigo_field else None
+        bango = bango_field.value if bango_field else None
+
+        # 両方に値がある場合: 記号が5桁でなければ結合して再分割
+        if kigo and bango:
+            if len(kigo) != 5:
+                # 結合して先頭5桁=記号、残り=番号に再分割
+                combined = kigo + bango
+                if len(combined) >= 5:
+                    new_kigo = combined[:5]
+                    new_bango = combined[5:] if len(combined) > 5 else None
+                    logger.warning(
+                        f"ゆうちょ記号/番号の区切りを修正: "
+                        f"記号={kigo}+番号={bango} → 記号={new_kigo}, 番号={new_bango}"
+                    )
+                    kigo_field.value = new_kigo
+                    bango_field.value = new_bango if new_bango else None
+
+        # 記号だけに値がある場合: 5桁を超えていたら番号部分を分離
+        elif kigo and not bango:
+            if len(kigo) > 5:
+                new_kigo = kigo[:5]
+                new_bango = kigo[5:]
+                logger.warning(
+                    f"ゆうちょ記号が5桁超（番号が混入）: {kigo} → 記号={new_kigo}, 番号={new_bango}"
+                )
+                kigo_field.value = new_kigo
+                bango_field.value = new_bango
+
+        return fields
+
     async def check_financial_codes(
         self, fields: list[OcrField]
     ) -> list[ValidationError]:
