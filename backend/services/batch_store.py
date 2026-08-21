@@ -166,6 +166,22 @@ class BatchStore:
             reverse=True,
         )
 
+    def set_s3_keys(
+        self,
+        batch_id: str,
+        output_key: str | None = None,
+        archive_key: str | None = None,
+    ) -> None:
+        """S3に保存したオブジェクトキーをジョブに記録する"""
+        job = self._jobs.get(batch_id)
+        if not job:
+            return
+        if output_key is not None:
+            job.s3_output_key = output_key
+        if archive_key is not None:
+            job.s3_archive_key = archive_key
+        job.updated_at = datetime.now()
+
     def _recalculate_job_status(self, job: BatchJob) -> None:
         """ジョブ全体のステータスを再計算する"""
         if not job.files:

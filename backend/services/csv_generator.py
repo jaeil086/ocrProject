@@ -211,6 +211,16 @@ class CsvGenerator:
                 if (field is None or not field.value) and has_bank:
                     return "-"
 
+            # 銀行番号・店番号は必須確認項目
+            # 値がない場合は「NG」（未記入として扱うが、確認が必要）
+            optional_code_fields = {"銀行番号", "店番号"}
+            if name in optional_code_fields:
+                if field is None or not field.value:
+                    return "NG"
+                if field.confidence_level == ConfidenceLevel.LOW:
+                    return "要確認"
+                return "OK"
+
             # 銀行名は「（x）」を含む場合NG（種別未選択）
             if name == "銀行名":
                 if field is None or not field.value:

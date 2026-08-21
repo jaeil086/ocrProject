@@ -57,6 +57,21 @@ function InlineCheckBadge({ field, allFields }: { field: OcrField; allFields?: O
         </span>
       );
     }
+
+    // 銀行番号・店番号は必須確認項目 → 空欄の場合は「NG 未記入」と表示
+    const requiredCodeFields = ['銀行番号', '店番号'];
+    if (requiredCodeFields.includes(field.field_name)) {
+      return (
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
+            NG
+          </span>
+          <span className="text-[10px] text-red-400">
+            未記入
+          </span>
+        </span>
+      );
+    }
   }
 
   if (!field.value) {
@@ -71,6 +86,32 @@ function InlineCheckBadge({ field, allFields }: { field: OcrField; allFields?: O
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
         NG
+      </span>
+    );
+  }
+  // マスター交差検証不一致の場合は「確認必要」（銀行名/銀行番号/支店名/店番号）
+  if (field.master_match?.cross_check_status === 'mismatch') {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-600">
+          確認必要
+        </span>
+        <span className="text-[10px] text-amber-500">
+          コード不一致
+        </span>
+      </span>
+    );
+  }
+  // マスター照合がng（マスターに存在しない）の場合
+  if (field.master_match?.match_status === 'ng') {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
+          NG
+        </span>
+        <span className="text-[10px] text-red-400">
+          マスタ不一致
+        </span>
       </span>
     );
   }
@@ -95,25 +136,70 @@ function InlineCheckBadge({ field, allFields }: { field: OcrField; allFields?: O
 
 /**
  * マスター照合情報のインライン表示
- * 銀行名・支店名フィールドでmaster_matchが存在する場合に表示
+ * 銀行名・銀行番号・支店名・店番号フィールドでmaster_matchが存在する場合に表示
  */
 function MasterMatchDetail({ masterMatch }: { masterMatch: MasterMatchInfo }) {
   if (masterMatch.match_status === 'unverified') {
     return null;
   }
 
-  const statusConfig: Record<string, { label: string; className: string }> = {
-    ok: { label: 'マスタ一致', className: 'text-green-600' },
-    needs_review: { label: '候補あり', className: 'text-amber-600' },
-    ng: { label: '不一致', className: 'text-red-600' },
-  };
+  // 交差検証不一致の場合: マスター候補を表示
+  if (masterMatch.cross_check_status === 'mismatch') {
+    return (
+      <div className="space-y-0.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
+          {masterMatch.master_value && (
+            <span className="text-gray-500">
+              マスタ: <span className="font-medium text-amber-700">{masterMatch.master_value}</span>
+            </span>
+          )}
+          {masterMatch.master_code && (
+            <span className="text-gray-500">
+              コード: <span className="font-mono font-medium text-amber-700">{masterMatch.master_code}</span>
+            </span>
+          )}
+          <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
+            コード不一致
+          </span>
+        </div>
+        {/* 候補リスト（番号逆引きと名前マッチで改行分割） */}
+        {masterMatch.candidates.length > 0 && (() => {
+          const codeCandidates = masterMatch.candidates.filter(c => c.name.includes('（番号') || c.name.includes('（コード'));
+          const nameCandidates = masterMatch.candidates.filter(c => !c.name.includes('（番号') && !c.name.includes('（コード'));
+          return (
+            <div className="text-[10px] space-y-0.5">
+              {codeCandidates.length > 0 && (
+                <div className="text-gray-500">
+                  番号から: {codeCandidates.slice(0, 2).map((c, i) => (
+                    <span key={i} className="mr-1.5">
+                      <span className="font-medium text-blue-700">{c.name}</span>
+                      <span className="font-mono text-gray-400"> [{c.code}]</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {nameCandidates.length > 0 && (
+                <div className="text-gray-400">
+                  候補: {nameCandidates.slice(0, 5).map((c, i) => (
+                    <span key={i} className="mr-1.5">
+                      <span className="text-gray-600">{c.name}</span>
+                      <span className="font-mono text-gray-400"> [{c.code}]</span>
+                      <span className="text-gray-400"> {Math.round(c.score)}%</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+    );
+  }
 
-  const config = statusConfig[masterMatch.match_status] || { label: '', className: '' };
-
+  // 通常のマスター照合表示
   return (
-    <div className="ml-28 pl-2 pb-2 border-b border-gray-100">
+    <div className="space-y-0.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
-        {/* マスター値 + コード */}
         {masterMatch.master_value && (
           <span className="text-gray-500">
             マスタ: <span className="font-medium text-gray-700">{masterMatch.master_value}</span>
@@ -124,29 +210,290 @@ function MasterMatchDetail({ masterMatch }: { masterMatch: MasterMatchInfo }) {
             コード: <span className="font-mono font-medium text-gray-700">{masterMatch.master_code}</span>
           </span>
         )}
-        {/* 一致率 */}
-        {masterMatch.match_score > 0 && (
-          <span className={config.className}>
+        {masterMatch.match_status === 'ok' && masterMatch.match_score > 0 && (
+          <span className="text-green-600">
             一致率: {Math.round(masterMatch.match_score)}%
           </span>
         )}
-        {/* 交差検証結果 */}
-        {masterMatch.cross_check_status === 'mismatch' && (
-          <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
-            コード不一致
+        {masterMatch.match_status === 'needs_review' && masterMatch.match_score > 0 && (
+          <span className="text-amber-600">
+            一致率: {Math.round(masterMatch.match_score)}%
           </span>
         )}
       </div>
-      {/* 候補表示（needs_review / ng の場合） */}
-      {masterMatch.match_status !== 'ok' && masterMatch.candidates.length > 0 && (
-        <div className="mt-0.5 text-[10px] text-gray-400">
-          候補: {masterMatch.candidates.slice(0, 3).map((c, i) => (
-            <span key={i} className="inline-flex items-center gap-0.5 mr-2">
-              <span className="text-gray-600">{c.name}</span>
-              <span className="font-mono text-gray-400">[{c.code}]</span>
-              <span className="text-gray-400">{Math.round(c.score)}%</span>
+      {/* 候補リスト（needs_review / ng の場合） */}
+      {masterMatch.match_status !== 'ok' && masterMatch.candidates.length > 0 && (() => {
+        const codeCandidates = masterMatch.candidates.filter(c => c.name.includes('（番号'));
+        const nameCandidates = masterMatch.candidates.filter(c => !c.name.includes('（番号'));
+        return (
+          <div className="text-[10px] space-y-0.5">
+            {codeCandidates.length > 0 && (
+              <div className="text-gray-500">
+                番号から: {codeCandidates.slice(0, 2).map((c, i) => (
+                  <span key={i} className="mr-1.5">
+                    <span className="font-medium text-blue-700">{c.name}</span>
+                    <span className="font-mono text-gray-400"> [{c.code}]</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {nameCandidates.length > 0 && (
+              <div className="text-gray-400">
+                候補: {nameCandidates.slice(0, 5).map((c, i) => (
+                  <span key={i} className="mr-1.5">
+                    <span className="text-gray-600">{c.name}</span>
+                    <span className="font-mono text-gray-400"> [{c.code}]</span>
+                    <span className="text-gray-400"> {Math.round(c.score)}%</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+/**
+ * 金融機関グループのマスター照合結果を3パターンで表示
+ * パターン1: 名前OK + コード不一致 → 「名前は正しい。正しいコードは○○」
+ * パターン2: コードOK + 名前不一致 → 「コード○○は△△です」
+ * パターン3: 両方不一致 → 名前の候補リストを表示
+ */
+function FinancialGroupMatchDetail({
+  primaryMatch,
+  codeMatch,
+  nameLabel,
+  codeLabel,
+}: {
+  primaryMatch: MasterMatchInfo | null | undefined;
+  codeMatch: MasterMatchInfo | null | undefined;
+  nameLabel: string;
+  codeLabel: string;
+}) {
+  // 判定: 名前のマスター照合がOKか
+  const nameIsOk = primaryMatch?.match_status === 'ok';
+  // 判定: コードのマスター照合がOKか（OCRコードがマスターに存在する）
+  const codeIsOk = codeMatch?.match_status === 'ok' && !codeMatch?.cross_check_status;
+  // 交差検証不一致があるか
+  const hasCrossCheckMismatch = primaryMatch?.cross_check_status === 'mismatch'
+    || codeMatch?.cross_check_status === 'mismatch';
+
+  // パターン1: 名前OK + コード不一致（名前は正しく読めたが、番号がOCR誤読）
+  // ただし逆（名前がOCR誤読でたまたまマスター一致）の可能性もあるため、番号逆引き候補も表示
+  if (nameIsOk && hasCrossCheckMismatch && primaryMatch) {
+    // コードフィールドに逆引き候補があれば表示する
+    const codeReverseCandidate = codeMatch?.candidates?.filter(
+      c => c.name.includes('（番号') || c.name.includes('（コード')
+    ) || [];
+    return (
+      <div className="space-y-0.5 text-[10px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          <span className="text-green-600">
+            {nameLabel}マスタ一致: <span className="font-medium">{primaryMatch.master_value}</span>
+          </span>
+          <span className="text-gray-500">
+            正しいコード: <span className="font-mono font-bold text-blue-700">{primaryMatch.master_code}</span>
+          </span>
+          <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
+            {codeLabel}不一致
+          </span>
+        </div>
+        {/* 番号からの逆引き候補（名前の誤読の可能性を示唆） */}
+        {codeReverseCandidate.length > 0 && (
+          <div className="text-gray-500">
+            番号から: {codeReverseCandidate.slice(0, 2).map((c, i) => (
+              <span key={i} className="mr-1.5">
+                <span className="font-medium text-blue-700">{c.name}</span>
+                <span className="font-mono text-gray-400"> [{c.code}]</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // パターン2: コードOK + 名前不一致（番号は正しいが、名前をOCR誤読）
+  if (codeIsOk && codeMatch && !nameIsOk && primaryMatch) {
+    const codeCandidatesP2 = primaryMatch.candidates.filter(c => c.name.includes('（番号') || c.name.includes('（コード'));
+    const nameCandidatesP2 = primaryMatch.candidates.filter(c => !c.name.includes('（番号') && !c.name.includes('（コード'));
+    return (
+      <div className="space-y-0.5 text-[10px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          <span className="text-green-600">
+            {codeLabel}マスタ一致: <span className="font-mono font-medium">{codeMatch.master_code}</span>
+          </span>
+          <span className="text-gray-500">
+            正しい{nameLabel}: <span className="font-bold text-blue-700">{codeMatch.master_value}</span>
+          </span>
+          <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
+            {nameLabel}不一致
+          </span>
+        </div>
+        {/* 番号逆引き候補 */}
+        {codeCandidatesP2.length > 0 && (
+          <div className="text-gray-500">
+            番号から: {codeCandidatesP2.slice(0, 2).map((c, i) => (
+              <span key={i} className="mr-1.5">
+                <span className="font-medium text-blue-700">{c.name}</span>
+                <span className="font-mono text-gray-400"> [{c.code}]</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {/* 名前マッチ候補（0%は除外） */}
+        {nameCandidatesP2.length > 0 && (
+          <div className="text-gray-400">
+            候補: {nameCandidatesP2.slice(0, 5).map((c, i) => (
+              <span key={i} className="mr-1.5">
+                <span className="text-gray-600">{c.name}</span>
+                <span className="font-mono text-gray-400"> [{c.code}]</span>
+                <span className="text-gray-400"> {Math.round(c.score)}%</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // パターン3: 両方不一致 or マスター照合がng/needs_review
+  if (primaryMatch) {
+    return (
+      <div className="space-y-0.5 text-[10px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          {primaryMatch.master_value && (
+            <span className="text-gray-500">
+              マスタ: <span className="font-medium text-amber-700">{primaryMatch.master_value}</span>
             </span>
-          ))}
+          )}
+          {primaryMatch.master_code && (
+            <span className="text-gray-500">
+              コード: <span className="font-mono font-medium text-amber-700">{primaryMatch.master_code}</span>
+            </span>
+          )}
+          {primaryMatch.match_score > 0 && primaryMatch.match_status !== 'ok' && (
+            <span className="text-amber-600">
+              一致率: {Math.round(primaryMatch.match_score)}%
+            </span>
+          )}
+          {hasCrossCheckMismatch && (
+            <span className="inline-flex items-center px-1 py-0.5 rounded bg-red-50 text-red-600 font-bold">
+              コード不一致
+            </span>
+          )}
+        </div>
+        {/* 候補リスト（番号逆引きと名前マッチで改行分割） */}
+        {primaryMatch.candidates.length > 0 && (() => {
+          const codeCandidates = primaryMatch.candidates.filter(c => c.name.includes('（番号'));
+          const nameCandidates = primaryMatch.candidates.filter(c => !c.name.includes('（番号'));
+          return (
+            <div className="text-[10px] space-y-0.5">
+              {codeCandidates.length > 0 && (
+                <div className="text-gray-500">
+                  番号から: {codeCandidates.slice(0, 2).map((c, i) => (
+                    <span key={i} className="mr-1.5">
+                      <span className="font-medium text-blue-700">{c.name}</span>
+                      <span className="font-mono text-gray-400"> [{c.code}]</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {nameCandidates.length > 0 && (
+                <div className="text-gray-400">
+                  候補: {nameCandidates.slice(0, 5).map((c, i) => (
+                    <span key={i} className="mr-1.5">
+                      <span className="text-gray-600">{c.name}</span>
+                      <span className="font-mono text-gray-400"> [{c.code}]</span>
+                      <span className="text-gray-400"> {Math.round(c.score)}%</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+/**
+ * 金融機関グループ表示コンポーネント
+ * 「銀行名・銀行番号」または「支店名・店番号」をセットで表示し、
+ * マスター照合情報はグループの下に1回だけ表示する
+ */
+function FinancialFieldGroup({
+  nameField,
+  codeField,
+  nameLabel,
+  codeLabel,
+  allFields,
+}: {
+  nameField: OcrField | undefined;
+  codeField: OcrField | undefined;
+  nameLabel: string;
+  codeLabel: string;
+  allFields: OcrField[];
+}) {
+  const nameValue = nameField?.corrected_value || nameField?.value || '-';
+  const codeValue = codeField?.corrected_value || codeField?.value || '-';
+
+  // マスター情報: 名前フィールドのmaster_matchを優先（銀行名/支店名に照合情報がある）
+  const primaryMatch = nameField?.master_match;
+  const codeMatch = codeField?.master_match;
+
+  // グループ全体の状態を判定（問題がある場合に背景色を付ける）
+  const hasIssue = primaryMatch?.cross_check_status === 'mismatch'
+    || codeMatch?.cross_check_status === 'mismatch'
+    || primaryMatch?.match_status === 'ng'
+    || primaryMatch?.match_status === 'needs_review'
+    || codeMatch?.match_status === 'ng'
+    || codeMatch?.match_status === 'needs_review';
+
+  const hasValidMatch = primaryMatch && primaryMatch.match_status !== 'unverified';
+
+  return (
+    <div className={`border-b border-gray-200 ${hasIssue ? 'bg-amber-50/30' : ''}`}>
+      {/* 名前行 */}
+      <div className="flex items-center text-xs py-2.5 px-0 gap-2">
+        <span className="w-28 text-gray-500 flex-shrink-0">{nameLabel}</span>
+        <span className="flex-shrink-0">
+          {nameField ? <InlineCheckBadge field={nameField} allFields={allFields} /> : (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">-</span>
+          )}
+        </span>
+        <span className="flex-1 text-gray-800 font-semibold text-right">{nameValue}</span>
+      </div>
+      {/* コード行 */}
+      <div className="flex items-center text-xs py-2.5 px-0 gap-2">
+        <span className="w-28 text-gray-500 flex-shrink-0">{codeLabel}</span>
+        <span className="flex-shrink-0">
+          {codeField ? <InlineCheckBadge field={codeField} allFields={allFields} /> : (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">-</span>
+          )}
+        </span>
+        <span className="flex-1 text-gray-800 font-semibold text-right">{codeValue}</span>
+      </div>
+      {/* マスター照合情報（グループ下に1回だけ表示 - 3パターン対応） */}
+      {hasIssue && (
+        <div className="pl-2 pb-2 ml-28">
+          <FinancialGroupMatchDetail
+            primaryMatch={primaryMatch}
+            codeMatch={codeMatch}
+            nameLabel={nameLabel}
+            codeLabel={codeLabel}
+          />
+        </div>
+      )}
+      {/* 問題なし（OK）の場合もマスター情報を表示 */}
+      {!hasIssue && hasValidMatch && primaryMatch && (
+        <div className="pl-2 pb-2 ml-28">
+          <MasterMatchDetail masterMatch={primaryMatch} />
         </div>
       )}
     </div>
@@ -209,15 +556,13 @@ export default function BatchFileDetail({
 
   const canReprocess = file.status === 'failed' || file.status === 'needs_review';
 
-  // OCR主要項目フィールド名リスト
+  // OCR主要項目フィールド名リスト（銀行名/番号・支店名/番号はグループ表示のため除外）
   const mainFields = [
     '預金者氏名',
     '預金者フリガナ',
     'お届出印金融機関',
-    '銀行名',
-    '銀行番号',
-    '支店名',
-    '店番号',
+    '__bank_group__',   // 銀行名・銀行番号グループ
+    '__branch_group__', // 支店名・店番号グループ
     '預金種目',
     '口座番号',
     'ゆうちょ記号',
@@ -308,11 +653,39 @@ export default function BatchFileDetail({
                   </div>
                   <div className="space-y-0">
                     {mainFields.map((fieldName) => {
+                      // ------------------------------------- 銀行名・銀行番号グループ -------------------------------------
+                      if (fieldName === '__bank_group__') {
+                        const bankNameField = document.fields.find((f) => f.field_name === '銀行名');
+                        const bankCodeField = document.fields.find((f) => f.field_name === '銀行番号');
+                        return (
+                          <FinancialFieldGroup
+                            key="bank_group"
+                            nameField={bankNameField}
+                            codeField={bankCodeField}
+                            nameLabel="銀行名"
+                            codeLabel="銀行番号"
+                            allFields={document.fields}
+                          />
+                        );
+                      }
+                      // ------------------------------------- 支店名・店番号グループ -------------------------------------
+                      if (fieldName === '__branch_group__') {
+                        const branchNameField = document.fields.find((f) => f.field_name === '支店名');
+                        const branchCodeField = document.fields.find((f) => f.field_name === '店番号');
+                        return (
+                          <FinancialFieldGroup
+                            key="branch_group"
+                            nameField={branchNameField}
+                            codeField={branchCodeField}
+                            nameLabel="支店名"
+                            codeLabel="店番号"
+                            allFields={document.fields}
+                          />
+                        );
+                      }
+                      // 通常フィールド
                       const field = document.fields.find((f) => f.field_name === fieldName);
                       const value = field?.corrected_value || field?.value || '-';
-                      const showMasterMatch = field?.master_match
-                        && field.master_match.match_status !== 'unverified'
-                        && ['銀行名', '支店名', '銀行番号', '店番号'].includes(fieldName);
                       return (
                         <div key={fieldName}>
                           <div className="flex items-center text-xs border-b border-gray-100 py-2.5 gap-2">
@@ -329,10 +702,6 @@ export default function BatchFileDetail({
                             {/* 値 */}
                             <span className="flex-1 text-gray-800 font-semibold text-right">{value}</span>
                           </div>
-                          {/* マスター照合情報（銀行名・支店名・銀行番号・店番号のみ） */}
-                          {showMasterMatch && field?.master_match && (
-                            <MasterMatchDetail masterMatch={field.master_match} />
-                          )}
                         </div>
                       );
                     })}

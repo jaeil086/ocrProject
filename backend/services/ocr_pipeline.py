@@ -126,7 +126,12 @@ class OcrPipeline:
             document = self._build_document(file_id, claude_result)
             _update_progress(85)
 
-            # Step 5: 金融機関マスター検証
+            # Step 5: 銀行番号/店番号の桁数チェック・入れ替わり修正
+            self.validator.fix_swapped_bank_branch_codes(document.fields)
+            # ゆうちょ記号/番号の桁数チェック・区切り修正
+            self.validator.fix_yucho_codes(document.fields)
+
+            # Step 6: 金融機関マスター検証
             logger.info(f"[{file_id}] 金融機関マスター検証開始")
             t3 = time.perf_counter()
             try:
@@ -134,8 +139,6 @@ class OcrPipeline:
                     document.fields
                 )
                 document.validation_errors.extend(master_errors)
-                # コード補完（銀行番号/店番号が空の場合にマスターから自動決定）
-                self.validator.complement_codes(document.fields)
             except Exception as e:
                 logger.warning(
                     f"[{file_id}] 金融機関マスター検証でエラー（処理継続）: {e}"

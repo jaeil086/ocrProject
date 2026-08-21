@@ -279,6 +279,8 @@ class ZenginMasterService:
 
         return "ok"
 
+
+    # 銀行のコード取得
     def get_bank_by_code(self, bank_code: str) -> Optional[BankInfo]:
         """銀行コードから銀行情報を取得"""
         return self._banks.get(bank_code)

@@ -109,6 +109,11 @@ async def upload_pdf(files: list[UploadFile] = File(...)):
             continue
 
         # Step 4: バリデーション実行
+        # 銀行番号/店番号の桁数チェック・入れ替わり修正
+        _validator.fix_swapped_bank_branch_codes(document.fields)
+        # ゆうちょ記号/番号の桁数チェック・区切り修正
+        _validator.fix_yucho_codes(document.fields)
+
         if document.form_type:
             missing_errors = _validator.check_missing_fields(
                 document.fields, document.form_type
@@ -121,10 +126,7 @@ async def upload_pdf(files: list[UploadFile] = File(...)):
         all_errors = missing_errors + financial_errors
         document.validation_errors = all_errors
 
-        # Step 5: 金融機関コード補完
-        document.fields = _validator.complement_codes(document.fields)
-
-        # Step 6: 書類仕分け
+        # Step 5: 書類仕分け
         document.status = _classifier.classify(
             document.fields, document.validation_errors
         )
