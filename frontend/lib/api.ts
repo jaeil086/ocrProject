@@ -196,6 +196,19 @@ export async function downloadBatchCsv(batchId: string): Promise<void> {
 
   if (!res.ok) throw new Error(await res.text());
 
+  const contentType = res.headers.get('content-type') || '';
+
+  // S3 pre-signed URLが返された場合
+  if (contentType.includes('application/json')) {
+    const data = await res.json();
+    const a = document.createElement('a');
+    a.href = data.download_url;
+    a.download = data.filename || `OCR_BATCH_RESULT_${batchId}.xlsx`;
+    a.click();
+    return;
+  }
+
+  // フォールバック: 直接バイナリが返された場合
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -215,6 +228,19 @@ export async function downloadBatchZip(batchId: string): Promise<void> {
 
   if (!res.ok) throw new Error(await res.text());
 
+  const contentType = res.headers.get('content-type') || '';
+
+  // S3 pre-signed URLが返された場合
+  if (contentType.includes('application/json')) {
+    const data = await res.json();
+    const a = document.createElement('a');
+    a.href = data.download_url;
+    a.download = data.filename || `OCR_BATCH_RESULT_${batchId}.zip`;
+    a.click();
+    return;
+  }
+
+  // フォールバック: 直接バイナリが返された場合
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');

@@ -301,6 +301,9 @@ async def _save_results_to_s3(batch_id: str) -> None:
         if not job:
             return
 
+        output_key = None
+        archive_key = None
+
         # --- 01_output: 全体結果Excelを生成して保存 ---
         rows = []
         for file_item in job.files:
@@ -314,7 +317,7 @@ async def _save_results_to_s3(batch_id: str) -> None:
 
         if rows:
             excel_bytes = _csv_generator.generate_excel(rows)
-            await asyncio.to_thread(
+            output_key = await asyncio.to_thread(
                 s3_storage.upload_output_excel, batch_id, excel_bytes
             )
 
@@ -328,9 +331,12 @@ async def _save_results_to_s3(batch_id: str) -> None:
         zip_buffer.seek(0)
 
         if zip_buffer.getbuffer().nbytes > 22:
-            await asyncio.to_thread(
+            archive_key = await asyncio.to_thread(
                 s3_storage.upload_archive_zip, batch_id, zip_buffer.getvalue()
             )
+
+        # S3キーをバッチジョブに記録
+        batch_store.set_s3_keys(batch_id, output_key=output_key, archive_key=archive_key)
 
         logger.info(f"[バッチ {batch_id}] S3自動保存完了（結果Excel + アーカイブZIP）")
 
@@ -497,7 +503,15 @@ async def download_batch_csv(batch_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="バッチジョブが見つかりません")
 
-    # 完了・確認必要のファイルからデータを集約
+    # S3にキーが記録されている場合はPre-signed URLをJSON返却
+    if job.s3_output_key:
+        filename = f"OCR_BATCH_RESULT_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        presigned_url = s3_storage.generate_presigned_url(
+            job.s3_output_key, filename=filename
+        )
+        return {"download_url": presigned_url, "filename": filename}
+
+    # フォールバック: S3未保存の場合はインメモリ生成
     rows = []
     for file_item in job.files:
         if file_item.status in (
@@ -514,7 +528,6 @@ async def download_batch_csv(batch_id: str):
             detail="ダウンロード可能な処理結果がまだありません",
         )
 
-    # Excel形式（xlsx）で出力（チェック項目色分け付き）
     excel_bytes = _csv_generator.generate_excel(rows)
     buffer = io.BytesIO(excel_bytes)
 
@@ -537,18 +550,25 @@ async def download_batch_zip(batch_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="バッチジョブが見つかりません")
 
+    # S3にキーが記録されている場合はPre-signed URLをJSON返却
+    if job.s3_archive_key:
+        filename = f"OCR_BATCH_RESULT_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        presigned_url = s3_storage.generate_presigned_url(
+            job.s3_archive_key, filename=filename
+        )
+        return {"download_url": presigned_url, "filename": filename}
+
+    # フォールバック: S3未保存の場合はインメモリ生成
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_item in job.files:
             pdf_bytes = store.get_pdf(file_item.file_id)
             if pdf_bytes:
-                # バッチファイル名をZIP内のファイル名として使用
                 zf.writestr(file_item.batch_filename, pdf_bytes)
 
     buffer.seek(0)
 
     if buffer.getbuffer().nbytes <= 22:
-        # 空のZIPファイル（ファイルが1つも含まれていない）
         raise HTTPException(
             status_code=404,
             detail="ダウンロード可能なPDFファイルがまだありません",

@@ -229,6 +229,8 @@ class BatchJob(BaseModel):
     status: BatchJobStatus = BatchJobStatus.UPLOADING
     total_files: int = 0
     files: list[BatchFileItem] = []
+    s3_output_key: Optional[str] = None  # S3に保存した結果ExcelのオブジェクトKey
+    s3_archive_key: Optional[str] = None  # S3に保存したアーカイブZIPのオブジェクトKey
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 

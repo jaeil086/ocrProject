@@ -12,6 +12,7 @@ S3ストレージサービス
 
 import io
 import logging
+import urllib.parse
 import zipfile
 from datetime import datetime
 
@@ -128,6 +129,41 @@ class S3Storage:
             return s3_key
         except ClientError as e:
             logger.error(f"[S3] アーカイブZIPアップロード失敗: {e}")
+            raise
+
+    def generate_presigned_url(
+        self, s3_key: str, expires_in: int = 600, filename: str | None = None
+    ) -> str:
+        """S3オブジェクトのPre-signed URLを生成する
+
+        Args:
+            s3_key: S3オブジェクトキー
+            expires_in: URL有効期限（秒）。デフォルト600秒（10分）
+            filename: ダウンロード時のファイル名（指定時にContent-Dispositionヘッダーを付与）
+
+        Returns:
+            Pre-signed URL文字列
+        """
+        params = {
+            "Bucket": S3_BUCKET_NAME,
+            "Key": s3_key,
+        }
+        if filename:
+            encoded_filename = urllib.parse.quote(filename)
+            params["ResponseContentDisposition"] = (
+                f"attachment; filename*=UTF-8''{encoded_filename}"
+            )
+
+        try:
+            url = self._client.generate_presigned_url(
+                "get_object",
+                Params=params,
+                ExpiresIn=expires_in,
+            )
+            logger.info(f"[S3] Pre-signed URL生成: {s3_key} (有効期限: {expires_in}秒)")
+            return url
+        except ClientError as e:
+            logger.error(f"[S3] Pre-signed URL生成失敗: {e}")
             raise
 
 
