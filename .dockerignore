@@ -1,0 +1,54 @@
+# ============================================================
+# .dockerignore — Docker ビルド時に除外するファイル
+# ============================================================
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.venv
+venv
+
+# Node
+frontend/node_modules
+frontend/.next
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Kiro
+.kiro
+
+# Logs and temp
+*.log
+logs/
+temp/
+backups/
+
+# SSL certificates
+nginx/ssl/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!backend/data/**
+
+# Test files
+test_*.txt
+tests/

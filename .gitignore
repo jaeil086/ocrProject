@@ -8,7 +8,9 @@ venv/
 
 # Environment Variables
 .env
-.env.*
+.env.local
+.env.production
+# .env.example はコミット対象
 
 # Editor
 .vscode/
@@ -29,3 +31,12 @@ temp/
 # Test Output
 test_err.txt
 test_output.txt
+
+# SSL Certificates
+nginx/ssl/
+
+# Backup Files
+backups/
+
+# Deploy Logs
+logs/
