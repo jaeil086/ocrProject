@@ -106,6 +106,25 @@ class S3Storage:
             logger.error(f"[S3] 結果Excelアップロード失敗: {e}")
             raise
 
+    def overwrite_output_excel(self, s3_key: str, excel_bytes: bytes) -> None:
+        """既存のS3オブジェクトキーにExcelを上書き保存する
+
+        Args:
+            s3_key: 既存のS3オブジェクトキー
+            excel_bytes: Excelバイナリデータ
+        """
+        try:
+            self._client.put_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=s3_key,
+                Body=excel_bytes,
+                ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            logger.info(f"[S3] 結果Excel上書き完了: s3://{S3_BUCKET_NAME}/{s3_key}")
+        except ClientError as e:
+            logger.error(f"[S3] 結果Excel上書き失敗: {e}")
+            raise
+
     def upload_archive_zip(self, batch_id: str, zip_bytes: bytes) -> str:
         """全原本PDFのZIPファイルをS3にアップロードする
 

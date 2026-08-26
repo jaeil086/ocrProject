@@ -251,6 +251,7 @@ export default function BatchPage() {
                 file={selectedFile}
                 batchId={batchId}
                 onReprocess={handleReprocess}
+                onRefresh={fetchStatus}
               />
             ) : (
               <div className="bg-white border border-gray-200 rounded-xl shadow-sm flex items-center justify-center h-full min-h-[400px]">

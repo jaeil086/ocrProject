@@ -153,7 +153,7 @@ export default function BatchStatusPanel({
         <div className="flex flex-col gap-2">
           <button
             onClick={onDownloadCsv}
-            disabled={status.completed + status.needs_review === 0}
+            disabled={status.processing > 0 || status.queued > 0 || (status.completed + status.needs_review === 0)}
             className="flex items-center gap-2 bg-green-600 text-white text-xs font-medium px-4 py-2 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -163,8 +163,7 @@ export default function BatchStatusPanel({
           </button>
           <button
             onClick={onDownloadZip}
-            disabled={status.completed + status.needs_review === 0}
-            // disabled={status.total_files === 0}
+            disabled={status.processing > 0 || status.queued > 0 || (status.completed + status.needs_review === 0)}
             className="flex items-center gap-2 bg-blue-600 text-white text-xs font-medium px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">

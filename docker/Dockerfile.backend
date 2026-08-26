@@ -1,0 +1,65 @@
+# ============================================================
+# Backend Dockerfile — FastAPI + uvicorn
+# OCR口座振替依頼書処理システム
+# ============================================================
+# マルチステージビルド: 依存インストール → 本番イメージ
+# ============================================================
+
+# --- Stage 1: 依存関係インストール ---
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# システム依存パッケージ（OpenCV headless用）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# pip依存関係をキャッシュ活用のため先にコピー
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# --- Stage 2: 本番イメージ ---
+FROM python:3.11-slim
+
+LABEL maintainer="OCR System Team"
+LABEL description="FastAPI Backend for OCR Transfer Form Processing"
+
+WORKDIR /app
+
+# ランタイム依存パッケージ
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash appuser
+
+# Stage 1からインストール済みパッケージをコピー
+COPY --from=builder /install /usr/local
+
+# アプリケーションコードをコピー
+COPY backend/ /app/backend/
+
+# 一時ディレクトリ作成（PDFアップロード処理用）
+RUN mkdir -p /app/backend/temp /app/logs \
+    && chown -R appuser:appuser /app
+
+# 非rootユーザーで実行
+USER appuser
+
+# 環境変数のデフォルト値
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
+
+# ヘルスチェック
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/ || exit 1
+
+# ポート公開
+EXPOSE 8000
+
+# uvicorn起動（本番モード）
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--log-level", "info"]

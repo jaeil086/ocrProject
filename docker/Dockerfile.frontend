@@ -1,0 +1,68 @@
+# ============================================================
+# Frontend Dockerfile — Next.js 14 (Standalone Build)
+# OCR口座振替依頼書処理システム
+# ============================================================
+# マルチステージビルド: 依存インストール → ビルド → 本番イメージ
+# ============================================================
+
+# --- Stage 1: 依存関係インストール ---
+FROM node:18-alpine AS deps
+
+WORKDIR /app
+
+# パッケージ定義をコピーしてインストール
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --only=production
+
+# --- Stage 2: ビルド ---
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# 全依存関係（devDependencies含む）をインストール
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+# ソースコードコピー
+COPY frontend/ .
+
+# Next.js standalone ビルド
+# NEXT_PUBLIC_API_URL は ビルド時に埋め込まれないため実行時に設定可能
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# --- Stage 3: 本番イメージ ---
+FROM node:18-alpine AS runner
+
+LABEL maintainer="OCR System Team"
+LABEL description="Next.js Frontend for OCR Transfer Form Processing"
+
+WORKDIR /app
+
+# セキュリティ: 非rootユーザー
+RUN addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 nextjs
+
+# Next.js standalone出力をコピー
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# 非rootユーザーで実行
+USER nextjs
+
+# 環境変数
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME="0.0.0.0"
+
+# ヘルスチェック
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+
+# ポート公開
+EXPOSE 3000
+
+# Next.js standalone サーバー起動
+CMD ["node", "server.js"]
