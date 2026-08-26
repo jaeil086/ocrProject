@@ -1,36 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { BatchFileItem, OcrDocument, OcrField, MasterMatchInfo } from '@/types';
-import { getResult, downloadCsv, downloadPdf } from '@/lib/api';
+import { getResult, downloadCsv, downloadPdf, updateFieldCheckStatus } from '@/lib/api';
 
 interface BatchFileDetailProps {
   file: BatchFileItem;
   batchId: string;
   onReprocess: (fileId: string) => void;
+  onRefresh?: () => void;
 }
 
 type TabId = 'preview_ocr' | 'log';
 
-/** チェック結果インラインバッジ */
-function InlineCheckBadge({ field, allFields }: { field: OcrField; allFields?: OcrField[] }) {
-  // お届出印金融機関は「あり」/「なし」で判定
+/** 自動判定によるチェックステータスを計算する */
+function getAutoCheckStatus(field: OcrField, allFields?: OcrField[]): 'ok' | 'ng' | 'needs_review' | 'skip' {
+  // お届出印金融機関
   if (field.field_name === 'お届出印金融機関') {
-    if (field.value === 'あり') {
-      return (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-600">
-          OK
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
-        NG
-      </span>
-    );
+    return field.value === 'あり' ? 'ok' : 'ng';
   }
 
-  // 銀行系フィールドとゆうちょ系フィールドの排他判定
+  // 銀行系・ゆうちょ系の排他判定
   const bankFieldNames = ['銀行名', '支店名', '預金種目', '口座番号', '銀行番号', '店番号'];
   const yuchoFieldNames = ['ゆうちょ記号', 'ゆうちょ番号'];
 
@@ -41,96 +31,128 @@ function InlineCheckBadge({ field, allFields }: { field: OcrField; allFields?: O
     const hasBank = bankFieldNames.some(
       (fn) => allFields.find((f) => f.field_name === fn)?.value
     );
-
-    // 排他: 相手側に記入があり自分側が空欄 → 正常（「-」表示）
-    if (bankFieldNames.includes(field.field_name) && hasYucho) {
-      return (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
-          -
-        </span>
-      );
-    }
-    if (yuchoFieldNames.includes(field.field_name) && hasBank) {
-      return (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
-          -
-        </span>
-      );
-    }
-
-    // 銀行番号・店番号は必須確認項目 → 空欄の場合は「NG 未記入」と表示
-    const requiredCodeFields = ['銀行番号', '店番号'];
-    if (requiredCodeFields.includes(field.field_name)) {
-      return (
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
-            NG
-          </span>
-          <span className="text-[10px] text-red-400">
-            未記入
-          </span>
-        </span>
-      );
-    }
+    if (bankFieldNames.includes(field.field_name) && hasYucho) return 'skip';
+    if (yuchoFieldNames.includes(field.field_name) && hasBank) return 'skip';
   }
 
-  if (!field.value) {
+  if (!field.value) return 'ng';
+  if (field.field_name === '銀行名' && field.value.includes('（x）')) return 'ng';
+  if (field.master_match?.cross_check_status === 'mismatch') return 'needs_review';
+  if (field.master_match?.match_status === 'ng') return 'ng';
+  if (field.confidence_level === 'low') return 'needs_review';
+  return 'ok';
+}
+
+/** チェック結果インラインバッジ（クリックでドロップダウン表示） */
+function InlineCheckBadge({
+  field,
+  allFields,
+  fileId,
+  onStatusChange,
+}: {
+  field: OcrField;
+  allFields?: OcrField[];
+  fileId?: string;
+  onStatusChange?: (fieldName: string, updatedField: OcrField) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // ドロップダウン外クリックで閉じる
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen]);
+
+  // 表示するステータスを決定（manual_check_statusがある場合はそちらを優先）
+  const autoStatus = getAutoCheckStatus(field, allFields);
+  const displayStatus = field.manual_check_status || (autoStatus === 'skip' ? 'skip' : autoStatus);
+
+  // ステータス変更ハンドラ
+  const handleStatusChange = async (newStatus: 'ok' | 'ng' | 'needs_review') => {
+    if (!fileId || !onStatusChange) return;
+    setIsUpdating(true);
+    try {
+      const updatedField = await updateFieldCheckStatus(fileId, field.field_name, newStatus);
+      onStatusChange(field.field_name, updatedField);
+    } catch (e) {
+      console.error('ステータス更新失敗:', e);
+    } finally {
+      setIsUpdating(false);
+      setIsOpen(false);
+    }
+  };
+
+  // skip（排他で対象外）の場合はドロップダウンなし
+  if (displayStatus === 'skip') {
     return (
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
-        NG
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
+        -
       </span>
     );
   }
-  // 銀行名で種別未選択（x）の場合はNG
-  if (field.field_name === '銀行名' && field.value.includes('（x）')) {
-    return (
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
-        NG
-      </span>
-    );
-  }
-  // マスター交差検証不一致の場合は「確認必要」（銀行名/銀行番号/支店名/店番号）
-  if (field.master_match?.cross_check_status === 'mismatch') {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-600">
-          確認必要
-        </span>
-        <span className="text-[10px] text-amber-500">
-          コード不一致
-        </span>
-      </span>
-    );
-  }
-  // マスター照合がng（マスターに存在しない）の場合
-  if (field.master_match?.match_status === 'ng') {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">
-          NG
-        </span>
-        <span className="text-[10px] text-red-400">
-          マスタ不一致
-        </span>
-      </span>
-    );
-  }
-  if (field.confidence_level === 'low') {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-600">
-          確認必要
-        </span>
-        <span className="text-[10px] text-amber-500">
-          {Math.round(field.confidence_score)}%
-        </span>
-      </span>
-    );
-  }
+
+  // バッジの設定
+  const badgeConfig = {
+    ok: { label: 'OK', className: 'bg-green-100 text-green-600' },
+    ng: { label: 'NG', className: 'bg-red-100 text-red-600' },
+    needs_review: { label: '確認必要', className: 'bg-amber-100 text-amber-600' },
+  };
+
+  const current = badgeConfig[displayStatus as keyof typeof badgeConfig] || badgeConfig.ok;
+  const isManual = !!field.manual_check_status;
+
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-600">
-      OK
-    </span>
+    <div className="relative inline-block" ref={dropdownRef}>
+      {/* クリック可能なバッジ */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        disabled={isUpdating}
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer hover:opacity-80 transition-opacity ${current.className} ${isManual ? 'ring-1 ring-blue-300' : ''} ${isUpdating ? 'opacity-50' : ''}`}
+        title="クリックしてステータスを変更"
+      >
+        {current.label}
+        <svg className="ml-0.5 w-2.5 h-2.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* ドロップダウンメニュー */}
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[100px]">
+          {(['ok', 'ng', 'needs_review'] as const).map((status) => {
+            const config = badgeConfig[status];
+            const isSelected = displayStatus === status;
+            return (
+              <button
+                key={status}
+                type="button"
+                onClick={() => handleStatusChange(status)}
+                className={`w-full text-left px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50 flex items-center gap-2 ${isSelected ? 'bg-gray-50' : ''}`}
+              >
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${config.className}`}>
+                  {config.label}
+                </span>
+                {isSelected && (
+                  <svg className="w-3 h-3 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -433,12 +455,16 @@ function FinancialFieldGroup({
   nameLabel,
   codeLabel,
   allFields,
+  fileId,
+  onStatusChange,
 }: {
   nameField: OcrField | undefined;
   codeField: OcrField | undefined;
   nameLabel: string;
   codeLabel: string;
   allFields: OcrField[];
+  fileId?: string;
+  onStatusChange?: (fieldName: string, updatedField: OcrField) => void;
 }) {
   const nameValue = nameField?.corrected_value || nameField?.value || '-';
   const codeValue = codeField?.corrected_value || codeField?.value || '-';
@@ -463,7 +489,7 @@ function FinancialFieldGroup({
       <div className="flex items-center text-xs py-2.5 px-0 gap-2">
         <span className="w-28 text-gray-500 flex-shrink-0">{nameLabel}</span>
         <span className="flex-shrink-0">
-          {nameField ? <InlineCheckBadge field={nameField} allFields={allFields} /> : (
+          {nameField ? <InlineCheckBadge field={nameField} allFields={allFields} fileId={fileId} onStatusChange={onStatusChange} /> : (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">-</span>
           )}
         </span>
@@ -473,7 +499,7 @@ function FinancialFieldGroup({
       <div className="flex items-center text-xs py-2.5 px-0 gap-2">
         <span className="w-28 text-gray-500 flex-shrink-0">{codeLabel}</span>
         <span className="flex-shrink-0">
-          {codeField ? <InlineCheckBadge field={codeField} allFields={allFields} /> : (
+          {codeField ? <InlineCheckBadge field={codeField} allFields={allFields} fileId={fileId} onStatusChange={onStatusChange} /> : (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">-</span>
           )}
         </span>
@@ -510,6 +536,7 @@ export default function BatchFileDetail({
   file,
   batchId,
   onReprocess,
+  onRefresh,
 }: BatchFileDetailProps) {
   const [activeTab, setActiveTab] = useState<TabId>('preview_ocr');
   const [document, setDocument] = useState<OcrDocument | null>(null);
@@ -527,6 +554,19 @@ export default function BatchFileDetail({
       setDocument(null);
     }
   }, [file.file_id, file.status]);
+
+  // フィールドのチェックステータスが変更された時にdocument内のフィールドを更新
+  const handleFieldStatusChange = (fieldName: string, updatedField: OcrField) => {
+    if (!document) return;
+    const updatedFields = document.fields.map((f) =>
+      f.field_name === fieldName ? updatedField : f
+    );
+    setDocument({ ...document, fields: updatedFields, updated_at: new Date().toISOString() });
+    // バッチファイル一覧のステータスを反映するためリフレッシュ
+    if (onRefresh) {
+      onRefresh();
+    }
+  };
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -665,6 +705,8 @@ export default function BatchFileDetail({
                             nameLabel="銀行名"
                             codeLabel="銀行番号"
                             allFields={document.fields}
+                            fileId={file.file_id}
+                            onStatusChange={handleFieldStatusChange}
                           />
                         );
                       }
@@ -680,6 +722,8 @@ export default function BatchFileDetail({
                             nameLabel="支店名"
                             codeLabel="店番号"
                             allFields={document.fields}
+                            fileId={file.file_id}
+                            onStatusChange={handleFieldStatusChange}
                           />
                         );
                       }
@@ -693,7 +737,7 @@ export default function BatchFileDetail({
                             <span className="w-28 text-gray-500 flex-shrink-0">{fieldName}</span>
                             {/* チェック結果バッジ */}
                             <span className="flex-shrink-0">
-                              {field ? <InlineCheckBadge field={field} allFields={document.fields} /> : (
+                              {field ? <InlineCheckBadge field={field} allFields={document.fields} fileId={file.file_id} onStatusChange={handleFieldStatusChange} /> : (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-400">
                                   -
                                 </span>

@@ -166,6 +166,14 @@ class BatchStore:
             reverse=True,
         )
 
+    def find_batch_by_file_id(self, file_id: str) -> tuple[Optional[str], Optional[BatchFileItem]]:
+        """file_idからbatch_idとファイル項目を逆引きする"""
+        for batch_id, job in self._jobs.items():
+            for file_item in job.files:
+                if file_item.file_id == file_id:
+                    return batch_id, file_item
+        return None, None
+
     def set_s3_keys(
         self,
         batch_id: str,

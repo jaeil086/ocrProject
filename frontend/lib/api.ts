@@ -66,6 +66,24 @@ export async function updateField(
 }
 
 /**
+ * フィールドチェックステータス変更（手動でOK/NG/確認必要を設定）
+ */
+export async function updateFieldCheckStatus(
+  fileId: string,
+  fieldName: string,
+  checkStatus: 'ok' | 'ng' | 'needs_review'
+): Promise<OcrField> {
+  const res = await fetch(`${API_BASE}/result/${fileId}/fields`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ field_name: fieldName, check_status: checkStatus }),
+  });
+
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/**
  * 目視確認ステータス更新
  */
 export async function updateVisualCheck(

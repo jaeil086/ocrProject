@@ -11,6 +11,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from backend.models.enums import BatchFileStatus, DocumentStatus
 from backend.models.schemas import (
     ConfirmRequest,
     FieldUpdateRequest,
@@ -19,6 +20,7 @@ from backend.models.schemas import (
     VisualCheck,
     VisualCheckUpdateRequest,
 )
+from backend.services.batch_store import batch_store
 from backend.services.csv_generator import CsvGenerator
 from backend.services.pdf_renamer import PdfRenamer
 from backend.services.store import store
@@ -41,16 +43,34 @@ async def get_result(file_id: str):
 
 @router.put("/result/{file_id}/fields", response_model=OcrField)
 async def update_field(file_id: str, request: FieldUpdateRequest):
-    """フィールド修正"""
+    """フィールド修正（値修正 or チェックステータス変更）"""
     document = store.get(file_id)
     if not document:
         raise HTTPException(status_code=404, detail="結果が見つかりません")
 
+    # check_statusのバリデーション
+    valid_statuses = {"ok", "ng", "needs_review", None}
+    if request.check_status is not None and request.check_status not in valid_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"check_statusは 'ok', 'ng', 'needs_review' のいずれかを指定してください",
+        )
+
     for field in document.fields:
         if field.field_name == request.field_name:
-            field.corrected_value = request.corrected_value
-            field.is_confirmed = True
+            # 値の修正がある場合
+            if request.corrected_value is not None:
+                field.corrected_value = request.corrected_value
+                field.is_confirmed = True
+            # チェックステータスの変更がある場合
+            if request.check_status is not None:
+                field.manual_check_status = request.check_status
+                field.is_confirmed = True
             document.updated_at = datetime.now()
+
+            # 全フィールドのステータスを確認してドキュメント全体のステータスを再評価
+            _reevaluate_document_status(document, file_id)
+
             store.update(document)
             return field
 
@@ -58,6 +78,65 @@ async def update_field(file_id: str, request: FieldUpdateRequest):
         status_code=404,
         detail=f"フィールド '{request.field_name}' が見つかりません",
     )
+
+
+def _reevaluate_document_status(document: OcrDocument, file_id: str) -> None:
+    """
+    全フィールドの手動チェックステータスに基づいてドキュメント＆バッチファイルの状態を再評価する。
+    全フィールドがOK → 完了、1つでもNG/確認必要 → 確認必要のまま。
+    """
+    # 排他フィールド判定用
+    bank_fields = {'銀行名', '支店名', '預金種目', '口座番号', '銀行番号', '店番号'}
+    yucho_fields = {'ゆうちょ記号', 'ゆうちょ番号'}
+
+    has_yucho = any(
+        f.value for f in document.fields if f.field_name in yucho_fields
+    )
+    has_bank = any(
+        f.value for f in document.fields if f.field_name in bank_fields
+    )
+
+    all_ok = True
+    for f in document.fields:
+        # 排他フィールドで対象外の場合はスキップ
+        if f.field_name in bank_fields and has_yucho and not has_bank:
+            continue
+        if f.field_name in yucho_fields and has_bank and not has_yucho:
+            continue
+
+        # manual_check_statusが設定されている場合はそれで判定
+        if f.manual_check_status:
+            if f.manual_check_status != "ok":
+                all_ok = False
+                break
+        else:
+            # 手動ステータス未設定の場合は自動判定
+            if not f.value:
+                all_ok = False
+                break
+            if f.confidence_level.value == "low":
+                all_ok = False
+                break
+            if f.master_match and f.master_match.match_status == "ng":
+                all_ok = False
+                break
+            if f.master_match and f.master_match.cross_check_status == "mismatch":
+                all_ok = False
+                break
+
+    # ドキュメントステータス更新
+    if all_ok:
+        document.status = DocumentStatus.NORMAL
+    else:
+        document.status = DocumentStatus.NEEDS_REVIEW
+
+    # バッチファイルステータス更新
+    batch_id, file_item = batch_store.find_batch_by_file_id(file_id)
+    if batch_id and file_item:
+        if all_ok:
+            batch_store.update_file_status(batch_id, file_id, BatchFileStatus.COMPLETED)
+        else:
+            batch_store.update_file_status(batch_id, file_id, BatchFileStatus.NEEDS_REVIEW)
 
 
 @router.put("/result/{file_id}/visual-checks", response_model=VisualCheck)

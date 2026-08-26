@@ -51,6 +51,7 @@ export interface OcrField {
   is_confirmed: boolean;
   corrected_value: string | null;
   master_match: MasterMatchInfo | null;
+  manual_check_status: 'ok' | 'ng' | 'needs_review' | null;
 }
 
 /** バリデーションエラー */
@@ -107,7 +108,8 @@ export interface UploadResponse {
 /** フィールド修正リクエスト */
 export interface FieldUpdateRequest {
   field_name: string;
-  corrected_value: string;
+  corrected_value?: string;
+  check_status?: 'ok' | 'ng' | 'needs_review' | null;
 }
 
 /** 目視確認更新リクエスト */

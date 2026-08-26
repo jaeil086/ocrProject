@@ -35,6 +35,7 @@ class OcrField(BaseModel):
     is_confirmed: bool = False  # 担当者確認済みフラグ
     corrected_value: Optional[str] = None  # 修正値
     master_match: Optional["MasterMatchInfo"] = None  # 金融機関マスター照合結果
+    manual_check_status: Optional[str] = None  # 手動チェックステータス: "ok" / "ng" / "needs_review" / None（自動判定）
 
 
 class MasterMatchCandidate(BaseModel):
@@ -176,7 +177,8 @@ class FieldUpdateRequest(BaseModel):
     """フィールド修正リクエスト"""
 
     field_name: str
-    corrected_value: str
+    corrected_value: Optional[str] = None  # 値の修正（省略可能）
+    check_status: Optional[str] = None  # 手動チェックステータス: "ok" / "ng" / "needs_review" / None
 
 
 class VisualCheckUpdateRequest(BaseModel):
