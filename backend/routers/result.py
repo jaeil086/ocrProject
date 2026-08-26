@@ -4,7 +4,9 @@
 OCR処理結果の取得・修正・確認・ダウンロードを行うAPIエンドポイント群。
 """
 
+import asyncio
 import io
+import logging
 import urllib.parse
 from datetime import datetime
 
@@ -23,9 +25,12 @@ from backend.models.schemas import (
 from backend.services.batch_store import batch_store
 from backend.services.csv_generator import CsvGenerator
 from backend.services.pdf_renamer import PdfRenamer
+from backend.services.s3_storage import s3_storage
 from backend.services.store import store
 
 router = APIRouter(prefix="/api")
+
+logger = logging.getLogger(__name__)
 
 # サービスインスタンス
 _csv_generator = CsvGenerator()
@@ -137,6 +142,44 @@ def _reevaluate_document_status(document: OcrDocument, file_id: str) -> None:
             batch_store.update_file_status(batch_id, file_id, BatchFileStatus.COMPLETED)
         else:
             batch_store.update_file_status(batch_id, file_id, BatchFileStatus.NEEDS_REVIEW)
+
+        # S3のExcelを最新データで再生成・上書き保存（バックグラウンド）
+        asyncio.create_task(_update_s3_excel(batch_id))
+
+
+async def _update_s3_excel(batch_id: str) -> None:
+    """バッチのExcelファイルをS3に上書き保存する（既存キーを再利用）"""
+    try:
+        from backend.routers.batch import _build_csv_row
+
+        job = batch_store.get_job(batch_id)
+        if not job:
+            return
+
+        # 既存のS3キーがない場合は何もしない
+        if not job.s3_output_key:
+            return
+
+        rows = []
+        for file_item in job.files:
+            if file_item.status in (
+                BatchFileStatus.COMPLETED,
+                BatchFileStatus.NEEDS_REVIEW,
+            ):
+                doc = store.get(file_item.file_id)
+                if doc:
+                    rows.append(_build_csv_row(doc, file_item))
+
+        if rows:
+            excel_bytes = _csv_generator.generate_excel(rows)
+            # 既存のS3キーに上書き
+            await asyncio.to_thread(
+                s3_storage.overwrite_output_excel, job.s3_output_key, excel_bytes
+            )
+            logger.info(f"[バッチ {batch_id}] S3 Excel上書き完了: {job.s3_output_key}")
+
+    except Exception as e:
+        logger.error(f"[バッチ {batch_id}] S3 Excel上書き失敗: {e}")
 
 
 @router.put("/result/{file_id}/visual-checks", response_model=VisualCheck)

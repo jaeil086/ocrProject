@@ -503,15 +503,7 @@ async def download_batch_csv(batch_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="バッチジョブが見つかりません")
 
-    # S3にキーが記録されている場合はPre-signed URLをJSON返却
-    if job.s3_output_key:
-        filename = f"OCR_BATCH_RESULT_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        presigned_url = s3_storage.generate_presigned_url(
-            job.s3_output_key, filename=filename
-        )
-        return {"download_url": presigned_url, "filename": filename}
-
-    # フォールバック: S3未保存の場合はインメモリ生成
+    # 常に最新のインメモリデータからExcelを生成（手動ステータス変更を反映するため）
     rows = []
     for file_item in job.files:
         if file_item.status in (
@@ -611,6 +603,12 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
 
     def get_check(name: str) -> str:
         field = field_map.get(name)
+
+        # 手動チェックステータスが設定されている場合はそちらを優先
+        if field and field.manual_check_status:
+            status_map = {"ok": "OK", "ng": "NG", "needs_review": "要確認"}
+            return status_map.get(field.manual_check_status, "OK")
+
         # お届出印金融機関は「あり」/「なし」で判定
         if name == "お届出印金融機関":
             if field and field.value == "あり":
@@ -662,7 +660,6 @@ def _build_csv_row(document: OcrDocument, file_item: BatchFileItem) -> dict:
         "入力ファイル名": file_item.batch_filename,
         "預金者氏名": get_value("預金者氏名"),
         "預金者フリガナ": get_value("預金者フリガナ"),
-        "お届出印金融機関": get_value("お届出印金融機関"),
         "銀行名": get_value("銀行名"),
         "支店名": get_value("支店名"),
         "預金種目": get_value("預金種目"),

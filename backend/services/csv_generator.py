@@ -32,7 +32,6 @@ CSV_COLUMNS = [
     # 抽出フィールド
     "預金者氏名",
     "預金者フリガナ",
-    "お届出印金融機関",
     "銀行名",
     "支店名",
     "預金種目",
@@ -172,6 +171,7 @@ class CsvGenerator:
         def get_check(name: str) -> str:
             """
             フィールドのチェック結果を返す
+            - manual_check_statusが設定されている場合はそちらを優先
             - お届出印金融機関: 「あり」→OK、それ以外→NG
             - 銀行名: 「（x）」を含む場合→NG（種別未選択）
             - 銀行関連フィールド（銀行名〜店番号）とゆうちょ関連（ゆうちょ記号・番号）は排他:
@@ -182,6 +182,12 @@ class CsvGenerator:
             - Confidence低い場合: "要確認"
             """
             field = field_map.get(name)
+
+            # 手動チェックステータスが設定されている場合はそちらを優先
+            if field and field.manual_check_status:
+                status_map = {"ok": "OK", "ng": "NG", "needs_review": "要確認"}
+                return status_map.get(field.manual_check_status, "OK")
+
             # お届出印金融機関は「あり」/「なし」で判定
             if name == "お届出印金融機関":
                 if field and field.value == "あり":
@@ -245,7 +251,6 @@ class CsvGenerator:
             # 抽出フィールド
             "預金者氏名": get_value("預金者氏名"),
             "預金者フリガナ": get_value("預金者フリガナ"),
-            "お届出印金融機関": get_value("お届出印金融機関"),
             "銀行名": get_value("銀行名"),
             "支店名": get_value("支店名"),
             "預金種目": get_value("預金種目"),
