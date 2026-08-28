@@ -83,7 +83,8 @@ export default function UploadPage() {
               口座振替依頼書 OCRバッチ処理
             </h2>
             <p className="text-sm text-gray-500">
-              PDF形式の口座振替依頼書をアップロードしてください（最大100件まで一括処理可能）
+              PDF形式の口座振替依頼書をアップロードしてください（最大100件まで一括処理可能）<br/>
+              <span className="text-xs text-gray-400">※ 複数ページのPDFは自動的にページ単位で分割して処理します</span>
             </p>
           </div>
 

@@ -272,6 +272,7 @@ export default function BatchPage() {
           </svg>
           <span>
             ファイル名のルール：｛連番3桁｝_｛委託者番号｝_｛契約者番号｝.pdf　例）001_11137_10110.pdf
+            ｜複数ページPDFは自動的にページ単位で分割されます（例：sample_p1.pdf, sample_p2.pdf）
           </span>
         </div>
       </main>

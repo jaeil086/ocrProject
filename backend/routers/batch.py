@@ -37,6 +37,7 @@ from backend.services.batch_store import batch_store
 from backend.services.csv_generator import CsvGenerator
 from backend.services.document_classifier import DocumentClassifier
 from backend.services.ocr_pipeline import OcrPipeline
+from backend.services.pdf_reader import PdfReader
 from backend.services.s3_storage import s3_storage
 from backend.services.store import store
 from backend.services.validator import Validator
@@ -50,6 +51,7 @@ _csv_generator = CsvGenerator()
 _validator = Validator()
 _classifier = DocumentClassifier()
 _ocr_pipeline = OcrPipeline()
+_pdf_reader = PdfReader()
 
 # バッチ処理の最大ファイル数
 MAX_BATCH_FILES = 100
@@ -348,7 +350,11 @@ async def _save_results_to_s3(batch_id: str) -> None:
 async def batch_upload(
     files: list[UploadFile] = File(...),
 ):
-    """複数PDFファイルの一括アップロード + バックグラウンド処理開始"""
+    """複数PDFファイルの一括アップロード + バックグラウンド処理開始
+
+    複数ページのPDFファイルは自動的にページ単位で分割し、
+    各ページを独立した預金口座振替届出書として処理する。
+    """
     # ファイル数チェック
     if len(files) > MAX_BATCH_FILES:
         raise HTTPException(
@@ -366,61 +372,133 @@ async def batch_upload(
     for file in files:
         _validate_pdf_format(file)
 
-    # バッチジョブ作成
-    batch_id = _generate_batch_id()
-    batch_store.create_job(batch_id, total_files=len(files))
+    # ファイル読み込み + 複数ページPDF分割
+    # (元ファイル名, 分割後PDFバイナリ, ページ番号, 元PDF総ページ数) のリスト
+    split_items: list[tuple[str, bytes, int, int]] = []
 
-    # ファイル読み込みとバッチファイルアイテム登録
-    file_data_list: list[tuple[str, bytes]] = []
-
-    for seq, file in enumerate(files, start=1):
-        file_id = _generate_file_id()
+    for file in files:
         original_filename = file.filename or "unknown.pdf"
         pdf_bytes = await file.read()
 
-        # 初期バッチファイル名: 連番 + 元ファイル名（OCR処理後に正式名に更新される）
+        # PDF分割（複数ページの場合は各ページを個別PDFに分離）
+        try:
+            page_pdfs = await asyncio.to_thread(
+                _pdf_reader.split_pages, pdf_bytes
+            )
+        except Exception as e:
+            logger.warning(
+                f"PDF分割失敗（元ファイルのまま処理続行）: {original_filename}: {e}"
+            )
+            # 分割失敗時はそのまま1ファイルとして処理
+            page_pdfs = [pdf_bytes]
+
+        total_pages = len(page_pdfs)
+        for page_num, page_pdf in enumerate(page_pdfs, start=1):
+            split_items.append((original_filename, page_pdf, page_num, total_pages))
+
+    # 分割後のファイル総数チェック
+    if len(split_items) > MAX_BATCH_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"ページ分割後のファイル数が上限を超えています"
+                f"（{len(split_items)}件 / 最大{MAX_BATCH_FILES}件）。"
+                f"アップロードするPDFを減らしてください。"
+            ),
+        )
+
+    # バッチジョブ作成（分割後の総ファイル数で）
+    batch_id = _generate_batch_id()
+    batch_store.create_job(batch_id, total_files=len(split_items))
+
+    # バッチファイルアイテム登録
+    file_data_list: list[tuple[str, bytes]] = []
+
+    for seq, (original_filename, page_pdf, page_num, total_pages) in enumerate(
+        split_items, start=1
+    ):
+        file_id = _generate_file_id()
+
+        # 表示用ファイル名: 複数ページの場合は「元ファイル名_p{ページ番号}」
+        if total_pages > 1:
+            # 拡張子を分離してページ番号を挿入
+            base_name = original_filename
+            if base_name.lower().endswith(".pdf"):
+                base_name = base_name[:-4]
+            display_filename = f"{base_name}_p{page_num}.pdf"
+        else:
+            display_filename = original_filename
+
+        # 初期バッチファイル名: 連番 + 表示ファイル名
         seq_str = str(seq).zfill(3)
-        batch_filename = f"{seq_str}_{original_filename}"
+        batch_filename = f"{seq_str}_{display_filename}"
 
         file_item = BatchFileItem(
             file_id=file_id,
             seq_number=seq,
-            original_filename=original_filename,
+            original_filename=display_filename,
             batch_filename=batch_filename,
             status=BatchFileStatus.QUEUED,
         )
 
         batch_store.add_file(batch_id, file_item)
-        batch_store.add_file_log(
-            batch_id, file_id, f"アップロード完了: {original_filename}"
-        )
-        file_data_list.append((file_id, pdf_bytes))
+
+        # ログ: 分割された場合はページ情報付き
+        if total_pages > 1:
+            batch_store.add_file_log(
+                batch_id,
+                file_id,
+                f"アップロード完了: {original_filename} (ページ {page_num}/{total_pages})",
+            )
+        else:
+            batch_store.add_file_log(
+                batch_id, file_id, f"アップロード完了: {original_filename}"
+            )
+
+        file_data_list.append((file_id, page_pdf))
 
     # 入力PDFをZIP化してS3にアップロード（バックグラウンド）
+    # 分割後の各ページPDFを保存
     pdf_files_for_s3 = [
-        (files[i].filename or f"file_{i+1}.pdf", pdf_bytes)
-        for i, (_, pdf_bytes) in enumerate(file_data_list)
+        (
+            batch_store.get_file_item(batch_id, file_id).original_filename
+            if batch_store.get_file_item(batch_id, file_id)
+            else f"file_{i+1}.pdf",
+            pdf_bytes,
+        )
+        for i, (file_id, pdf_bytes) in enumerate(file_data_list)
     ]
     asyncio.create_task(_upload_input_to_s3(batch_id, pdf_files_for_s3))
 
-    # バックグラウンドでOCR処理を開始（asyncio.create_taskで即時起動）
-    # BackgroundTasksはレスポンス送信完了後に実行されるため、
-    # ポーリングリクエストへの応答がブロックされる場合がある。
-    # create_taskを使うことでレスポンス送信前にタスクを起動し、
-    # ポーリング応答との並行実行を可能にする。
+    # バックグラウンドでOCR処理を開始
     asyncio.create_task(_process_batch(batch_id, file_data_list))
 
-    logger.info(
-        f"[バッチ {batch_id}] アップロード完了: {len(files)}件、バックグラウンド処理開始"
-    )
+    # ログ出力（分割情報付き）
+    uploaded_count = len(files)
+    split_count = len(split_items)
+    if split_count > uploaded_count:
+        logger.info(
+            f"[バッチ {batch_id}] アップロード完了: "
+            f"{uploaded_count}件のPDF → {split_count}件に分割、"
+            f"バックグラウンド処理開始"
+        )
+    else:
+        logger.info(
+            f"[バッチ {batch_id}] アップロード完了: {uploaded_count}件、バックグラウンド処理開始"
+        )
 
     # バッチジョブ内のファイル一覧を取得（レスポンスに含める）
     job = batch_store.get_job(batch_id)
 
     return BatchUploadResponse(
         batch_id=batch_id,
-        total_files=len(files),
-        message=f"{len(files)}件のファイルをアップロードしました。バックグラウンドで処理を開始します。",
+        total_files=len(split_items),
+        message=(
+            f"{uploaded_count}件のPDFをアップロードしました"
+            f"（{split_count}ページに分割）。バックグラウンドで処理を開始します。"
+            if split_count > uploaded_count
+            else f"{uploaded_count}件のファイルをアップロードしました。バックグラウンドで処理を開始します。"
+        ),
         files=job.files if job else [],
     )
 
