@@ -49,7 +49,10 @@ export function middleware(request: NextRequest) {
   }
 
   // 未認証: バックエンドのログイン開始エンドポイントへリダイレクト
-  const loginUrl = new URL('/api/auth/login', request.url);
+  // nextUrlを複製してパスだけ差し替えることで、リクエスト元のオリジン（Nginxのドメイン）を維持する。
+  const loginUrl = request.nextUrl.clone();
+  loginUrl.pathname = '/api/auth/login';
+  loginUrl.search = '';
   return NextResponse.redirect(loginUrl);
 }
 
