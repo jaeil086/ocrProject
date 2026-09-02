@@ -19,6 +19,7 @@ const ID_TOKEN_COOKIE = 'ocr_id_token';
 // 認証不要でアクセスを許可するパス（プレフィックス一致）
 const PUBLIC_PATHS = [
   '/api/auth', // ログイン・コールバック・ログアウト・me
+  '/healthz',  // Dockerヘルスチェック用（常に200を返す）
 ];
 
 function isPublicPath(pathname: string): boolean {
@@ -57,6 +58,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // 静的アセット・画像・Next.js内部を除く全ページに適用
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.png$).*)'],
+  // 静的アセット・画像・ヘルスチェック・Next.js内部を除く全ページに適用
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|healthz|.*\\.png$).*)'],
 };
