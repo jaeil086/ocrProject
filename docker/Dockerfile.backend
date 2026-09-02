@@ -11,8 +11,9 @@ FROM python:3.11-slim AS builder
 WORKDIR /build
 
 # システム依存パッケージ（OpenCV headless用）
+# 注: libgl1-mesa-glx は新しいDebian(bookworm以降)で廃止されたため、後継の libgl1 を使用する
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -29,8 +30,9 @@ LABEL description="FastAPI Backend for OCR Transfer Form Processing"
 WORKDIR /app
 
 # ランタイム依存パッケージ
+# 注: libgl1-mesa-glx は新しいDebian(bookworm以降)で廃止されたため、後継の libgl1 を使用する
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
