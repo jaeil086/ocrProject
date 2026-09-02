@@ -58,6 +58,12 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // 静的アセット・画像・ヘルスチェック・Next.js内部を除く全ページに適用
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|healthz|.*\\.png$).*)'],
+  // ページのみに適用する。以下は完全に対象外にする:
+  //   - /api/*      : APIはバックエンド/プロキシが担当（認証はFastAPI側のJWT検証で保護）
+  //   - /healthz    : Dockerヘルスチェック（常に200）
+  //   - /_next/*    : Next.js内部アセット
+  //   - 画像・favicon等の静的ファイル
+  matcher: [
+    '/((?!api|healthz|_next/static|_next/image|favicon.ico|.*\\.png$).*)',
+  ],
 };

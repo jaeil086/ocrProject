@@ -58,9 +58,10 @@ ENV NODE_ENV=production \
     HOSTNAME="0.0.0.0"
 
 # ヘルスチェック
-# 認証ミドルウェア対象外の /healthz を叩く（トップ / は未認証だと302リダイレクトになり失敗するため）
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/healthz || exit 1
+# 認証ミドルウェア対象外の /healthz を Node で直接叩く。
+# （トップ / は未認証だと302リダイレクトになり失敗する。またwget --spiderの挙動差を避けるためNodeで判定する）
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=5 \
+    CMD node -e "require('http').get('http://127.0.0.1:3000/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
 # ポート公開
 EXPOSE 3000
