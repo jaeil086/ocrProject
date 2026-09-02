@@ -52,22 +52,23 @@ def _set_auth_cookies(
     id_token: str,
     refresh_token: str | None,
 ) -> None:
-    """トークンをhttpOnly Cookieに設定する"""
+    """認証Cookieを設定する
+
+    認証・認可（get_current_user）に必要なのはIDトークンのみのため、
+    IDトークン1本だけをCookieに保存する。
+    アクセストークン・リフレッシュトークンは現状の認可判定では未使用であり、
+    3本すべてを保存するとSet-Cookieヘッダーが肥大化してプロキシ(nginx)の
+    ヘッダーバッファ上限を超える（502 upstream sent too big header）ため保存しない。
+
+    リフレッシュトークンによる自動再発行を将来実装する際は、必要に応じて
+    別パス（例: /api/auth 配下）に限定してリフレッシュトークンCookieを付与し、
+    全リクエストでは送信されないよう path を絞ること。
+    """
     secure = _cookie_secure()
     common = dict(httponly=True, secure=secure, samesite="lax", path="/")
     response.set_cookie(
-        auth_service.ACCESS_TOKEN_COOKIE, access_token, max_age=_COOKIE_MAX_AGE, **common
-    )
-    response.set_cookie(
         auth_service.ID_TOKEN_COOKIE, id_token, max_age=_COOKIE_MAX_AGE, **common
     )
-    if refresh_token:
-        response.set_cookie(
-            auth_service.REFRESH_TOKEN_COOKIE,
-            refresh_token,
-            max_age=_REFRESH_COOKIE_MAX_AGE,
-            **common,
-        )
 
 
 def _clear_auth_cookies(response: Response) -> None:
