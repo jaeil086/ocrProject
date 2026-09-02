@@ -116,13 +116,17 @@ def verify_token(token: str) -> AuthenticatedUser:
         )
 
     try:
-        # まずは署名・iss・expを検証（audience検証は後段で手動判定）
+        # 署名・iss・expを検証する。
+        # - verify_aud: audience はトークン種別により扱いが異なるため後段で手動判定する。
+        # - verify_at_hash: IDトークンには at_hash（access_tokenのハッシュ）が含まれるが、
+        #   access_token を渡さずに検証しようとすると失敗する。BFF方式ではサーバーが
+        #   トークンを直接受領しており、署名/iss/aud/exp検証で十分なため at_hash 検証は無効化する。
         claims = jwt.decode(
             token,
             key,
             algorithms=["RS256"],
             issuer=config.COGNITO_ISSUER,
-            options={"verify_aud": False},
+            options={"verify_aud": False, "verify_at_hash": False},
         )
     except JWTError as e:
         raise HTTPException(
