@@ -16,9 +16,10 @@ import uuid
 from datetime import datetime
 import zipfile
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from backend.models.audit import AuditEventType
 from backend.models.enums import (
     BatchFileStatus,
     BatchJobStatus,
@@ -33,6 +34,8 @@ from backend.models.schemas import (
     OcrDocument,
     VisualCheck,
 )
+from backend.services.audit_logger import log_event
+from backend.services.auth import AuthenticatedUser, get_current_user
 from backend.services.batch_store import batch_store
 from backend.services.csv_generator import CsvGenerator
 from backend.services.document_classifier import DocumentClassifier
@@ -118,7 +121,7 @@ def _validate_pdf_format(file: UploadFile) -> None:
 
 
 async def _process_single_file(
-    batch_id: str, file_id: str, pdf_bytes: bytes
+    batch_id: str, file_id: str, pdf_bytes: bytes, audit_ctx: dict | None = None
 ) -> None:
     """単一ファイルのOCR処理を実行する（バックグラウンドタスク用）"""
     try:
@@ -238,6 +241,20 @@ async def _process_single_file(
             f"[バッチ {batch_id}][{file_id}] 処理完了: status={batch_file_status.value}"
         )
 
+        # 監査ログ: OCR実行完了
+        if audit_ctx is not None:
+            from backend.services.audit_logger import log_event_ctx
+
+            target_name = (
+                file_item.original_filename if file_item else file_id
+            )
+            log_event_ctx(
+                AuditEventType.OCR_EXECUTE,
+                audit_ctx,
+                target_file=target_name,
+                detail=f"batch_id={batch_id}, status={batch_file_status.value}",
+            )
+
     except Exception as e:
         logger.error(
             f"[バッチ {batch_id}][{file_id}] 処理中に予期しないエラー: {e}"
@@ -266,7 +283,9 @@ async def _upload_input_to_s3(
 
 
 async def _process_batch(
-    batch_id: str, file_data_list: list[tuple[str, bytes]]
+    batch_id: str,
+    file_data_list: list[tuple[str, bytes]],
+    audit_ctx: dict | None = None,
 ) -> None:
     """バッチ全体の処理を実行する（セマフォで並行数制限）"""
     # 最初のポーリングリクエストが先に処理されるよう、少し待つ
@@ -280,7 +299,7 @@ async def _process_batch(
         async with semaphore:
             # 各ファイル処理前にイベントループに制御を戻す
             await asyncio.sleep(0)
-            await _process_single_file(batch_id, file_id, pdf_bytes)
+            await _process_single_file(batch_id, file_id, pdf_bytes, audit_ctx)
 
     # 全ファイルの並行処理を起動
     tasks = [
@@ -348,7 +367,9 @@ async def _save_results_to_s3(batch_id: str) -> None:
 
 @router.post("/upload", response_model=BatchUploadResponse)
 async def batch_upload(
+    request: Request,
     files: list[UploadFile] = File(...),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """複数PDFファイルの一括アップロード + バックグラウンド処理開始
 
@@ -371,6 +392,26 @@ async def batch_upload(
     # 全ファイルのPDF形式を事前検証
     for file in files:
         _validate_pdf_format(file)
+
+    # 監査ログ: ファイルアップロード（バッチ）
+    # バックグラウンド処理でIP等が取れないため、ここでユーザー情報を確定しておく
+    from backend.services.audit_logger import _client_ip  # 内部ヘルパー再利用
+
+    audit_ctx = {
+        "user_email": current_user.email,
+        "user_groups": current_user.groups,
+        "ip_address": _client_ip(request),
+        "user_agent": request.headers.get("user-agent"),
+    }
+    uploaded_names = ", ".join(f.filename or "unknown.pdf" for f in files)
+    log_event(
+        AuditEventType.FILE_UPLOAD,
+        request=request,
+        user_email=current_user.email,
+        user_groups=current_user.groups,
+        target_file=uploaded_names,
+        detail=f"count={len(files)}",
+    )
 
     # ファイル読み込み + 複数ページPDF分割
     # (元ファイル名, 分割後PDFバイナリ, ページ番号, 元PDF総ページ数) のリスト
@@ -471,7 +512,7 @@ async def batch_upload(
     asyncio.create_task(_upload_input_to_s3(batch_id, pdf_files_for_s3))
 
     # バックグラウンドでOCR処理を開始
-    asyncio.create_task(_process_batch(batch_id, file_data_list))
+    asyncio.create_task(_process_batch(batch_id, file_data_list, audit_ctx))
 
     # ログ出力（分割情報付き）
     uploaded_count = len(files)
@@ -504,7 +545,10 @@ async def batch_upload(
 
 
 @router.get("/{batch_id}/status", response_model=BatchStatusResponse)
-async def get_batch_status(batch_id: str):
+async def get_batch_status(
+    batch_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """バッチ処理状況を取得する"""
     job = batch_store.get_job(batch_id)
     if not job:
@@ -530,6 +574,8 @@ async def get_batch_status(batch_id: str):
 async def reprocess_file(
     batch_id: str,
     file_id: str,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """個別ファイルの再処理を実行する"""
     job = batch_store.get_job(batch_id)
@@ -564,8 +610,20 @@ async def reprocess_file(
     # ジョブステータスを処理中に
     batch_store.start_processing(batch_id)
 
+    # 監査用コンテキスト（バックグラウンドでのOCR実行ログ用）
+    from backend.services.audit_logger import _client_ip
+
+    audit_ctx = {
+        "user_email": current_user.email,
+        "user_groups": current_user.groups,
+        "ip_address": _client_ip(request),
+        "user_agent": request.headers.get("user-agent"),
+    }
+
     # バックグラウンドで再処理実行（create_taskで即時起動）
-    asyncio.create_task(_process_single_file(batch_id, file_id, pdf_bytes))
+    asyncio.create_task(
+        _process_single_file(batch_id, file_id, pdf_bytes, audit_ctx)
+    )
 
     return {
         "message": "再処理を開始しました",
@@ -575,11 +633,25 @@ async def reprocess_file(
 
 
 @router.get("/{batch_id}/download/csv")
-async def download_batch_csv(batch_id: str):
+async def download_batch_csv(
+    batch_id: str,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """全体結果Excelダウンロード（全ファイルの結果を1つのxlsxに出力、チェック項目色分け付き）"""
     job = batch_store.get_job(batch_id)
     if not job:
         raise HTTPException(status_code=404, detail="バッチジョブが見つかりません")
+
+    # 監査ログ: 結果ダウンロード
+    log_event(
+        AuditEventType.RESULT_DOWNLOAD,
+        request=request,
+        user_email=current_user.email,
+        user_groups=current_user.groups,
+        target_file=f"batch_{batch_id}_result.xlsx",
+        detail="download=excel",
+    )
 
     # 常に最新のインメモリデータからExcelを生成（手動ステータス変更を反映するため）
     rows = []
@@ -614,11 +686,25 @@ async def download_batch_csv(batch_id: str):
 
 
 @router.get("/{batch_id}/download/zip")
-async def download_batch_zip(batch_id: str):
+async def download_batch_zip(
+    batch_id: str,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """全原本PDFのZIPダウンロード"""
     job = batch_store.get_job(batch_id)
     if not job:
         raise HTTPException(status_code=404, detail="バッチジョブが見つかりません")
+
+    # 監査ログ: 結果ダウンロード
+    log_event(
+        AuditEventType.RESULT_DOWNLOAD,
+        request=request,
+        user_email=current_user.email,
+        user_groups=current_user.groups,
+        target_file=f"batch_{batch_id}_archive.zip",
+        detail="download=zip",
+    )
 
     # S3にキーが記録されている場合はPre-signed URLをJSON返却
     if job.s3_archive_key:

@@ -9,14 +9,17 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
+from backend.models.audit import AuditEventType, AuditResult
 from backend.models.enums import DocumentStatus, VisualCheckType
 from backend.models.schemas import (
     OcrDocument,
     UploadResponse,
     VisualCheck,
 )
+from backend.services.audit_logger import log_event
+from backend.services.auth import AuthenticatedUser, get_current_user
 from backend.services.document_classifier import DocumentClassifier
 from backend.services.ocr_pipeline import OcrPipeline
 from backend.services.pdf_reader import PdfReader
@@ -75,7 +78,11 @@ def _validate_pdf_format(file: UploadFile) -> None:
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_pdf(files: list[UploadFile] = File(...)):
+async def upload_pdf(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """PDFファイルアップロード + 自動OCR処理（複数対応）
 
     複数ページのPDFファイルは自動的にページ単位で分割し、
@@ -84,6 +91,17 @@ async def upload_pdf(files: list[UploadFile] = File(...)):
     # 全ファイルのPDF形式を事前検証
     for file in files:
         _validate_pdf_format(file)
+
+    # 監査ログ: ファイルアップロード
+    uploaded_names = ", ".join(f.filename or "unknown.pdf" for f in files)
+    log_event(
+        AuditEventType.FILE_UPLOAD,
+        request=request,
+        user_email=current_user.email,
+        user_groups=current_user.groups,
+        target_file=uploaded_names,
+        detail=f"count={len(files)}",
+    )
 
     results: list[dict] = []
 
@@ -177,6 +195,16 @@ async def upload_pdf(files: list[UploadFile] = File(...)):
             logger.info(
                 f"[{file_id}] 処理完了: status={document.status.value}, "
                 f"errors={len(all_errors)}"
+            )
+
+            # 監査ログ: OCR実行完了
+            log_event(
+                AuditEventType.OCR_EXECUTE,
+                request=request,
+                user_email=current_user.email,
+                user_groups=current_user.groups,
+                target_file=display_filename,
+                detail=f"status={document.status.value}, errors={len(all_errors)}",
             )
 
             # レスポンスデータ構築

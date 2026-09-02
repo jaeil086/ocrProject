@@ -205,6 +205,8 @@ IAMロールを使えば、EC2内にAWSキーを保存する必要がありま�
 icacls "C:\Users\YourName\Downloads\ocr-app-key.pem" /inheritance:r /grant:r "%USERNAME%:R"
 
 # SSH接続
+## ssh -i "C:\ssh\ocr-app-key.pem" ubuntu@ec2-13-193-112-40.ap-northeast-1.compute.amazonaws.com
+
 ssh -i "C:\Users\YourName\Downloads\ocr-app-key.pem" ubuntu@<Elastic-IP>
 ```
 

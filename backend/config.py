@@ -64,3 +64,62 @@ S3_BUCKET_NAME: str = os.environ.get("S3_BUCKET_NAME", "cheiru-ocr-storage")
 S3_INPUT_PREFIX: str = os.environ.get("S3_INPUT_PREFIX", "00_input")
 S3_OUTPUT_PREFIX: str = os.environ.get("S3_OUTPUT_PREFIX", "01_output")
 S3_ARCHIVE_PREFIX: str = os.environ.get("S3_ARCHIVE_PREFIX", "02_archive")
+
+
+# ============================================================
+# 認証設定（AWS Cognito）
+# ============================================================
+# 認証を有効化するかどうか。
+# 開発環境やCognito未設定時は "false" にすると認証をバイパスできる。
+# 本番環境では必ず "true" にすること。
+AUTH_ENABLED: bool = os.environ.get("AUTH_ENABLED", "true").lower() == "true"
+
+# Cognito User Pool ID（例: ap-northeast-1_xxxxxxxxx）
+COGNITO_USER_POOL_ID: str = os.environ.get("COGNITO_USER_POOL_ID", "")
+
+# Cognito App Client ID
+COGNITO_CLIENT_ID: str = os.environ.get("COGNITO_CLIENT_ID", "")
+
+# Cognito App Client Secret（Client Secretを有効にした場合のみ）
+COGNITO_CLIENT_SECRET: str = os.environ.get("COGNITO_CLIENT_SECRET", "")
+
+# Cognitoが属するリージョン（未指定時はAWS_REGIONを流用）
+COGNITO_REGION: str = os.environ.get("COGNITO_REGION", AWS_REGION)
+
+# Hosted UI ドメイン（例: https://ocr-auth.auth.ap-northeast-1.amazoncognito.com）
+COGNITO_DOMAIN: str = os.environ.get("COGNITO_DOMAIN", "")
+
+# OAuthコールバックURL（フロントのコールバックRoute Handler）
+# 例: https://ocr.example.com/api/auth/callback
+COGNITO_REDIRECT_URI: str = os.environ.get(
+    "COGNITO_REDIRECT_URI", "http://localhost:3000/api/auth/callback"
+)
+
+# ログアウト後のリダイレクト先
+COGNITO_LOGOUT_REDIRECT_URI: str = os.environ.get(
+    "COGNITO_LOGOUT_REDIRECT_URI", "http://localhost:3000/"
+)
+
+# JWTの発行者（issuer）。JWKS取得と iss 検証に使用する。
+COGNITO_ISSUER: str = (
+    f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}"
+    if COGNITO_USER_POOL_ID
+    else ""
+)
+
+# JWKS（公開鍵セット）のURL
+COGNITO_JWKS_URL: str = f"{COGNITO_ISSUER}/.well-known/jwks.json" if COGNITO_ISSUER else ""
+
+# 権限グループ名（Cognito Group）
+COGNITO_GROUP_ADMIN: str = os.environ.get("COGNITO_GROUP_ADMIN", "ocr-admin")
+COGNITO_GROUP_USER: str = os.environ.get("COGNITO_GROUP_USER", "ocr-user")
+
+
+# ============================================================
+# 監査ログ設定
+# ============================================================
+# 監査ログの出力先ディレクトリ（1行1イベントのJSON Lines形式で出力）
+AUDIT_LOG_DIR = Path(os.environ.get("AUDIT_LOG_DIR", "/app/logs/audit"))
+
+# 監査ログのバックエンド種別（現状は "json" のみ。将来 "s3" / "cloudwatch" / "dynamodb" 等に拡張可能）
+AUDIT_LOG_BACKEND: str = os.environ.get("AUDIT_LOG_BACKEND", "json")

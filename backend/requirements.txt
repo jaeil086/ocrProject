@@ -2,6 +2,7 @@ fastapi
 uvicorn
 python-multipart
 pydantic
+python-jose[cryptography]
 pandas
 pymupdf
 opencv-python-headless
