@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import UserMenu from "@/components/common/UserMenu";
 
 export const metadata: Metadata = {
   title: "OCR口座振替依頼書処理システム",
@@ -27,6 +28,9 @@ export default function RootLayout({
                 <p className="text-xs text-gray-500">AIによる口座振替依頼書の自動データ抽出</p>
               </div>
             </div>
+
+            {/* ログインユーザー表示 + ログアウト */}
+            <UserMenu />
           </div>
         </header>
 

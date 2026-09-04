@@ -10,9 +10,10 @@ import logging
 import urllib.parse
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from backend.models.audit import AuditEventType
 from backend.models.enums import BatchFileStatus, DocumentStatus
 from backend.models.schemas import (
     ConfirmRequest,
@@ -22,13 +23,16 @@ from backend.models.schemas import (
     VisualCheck,
     VisualCheckUpdateRequest,
 )
+from backend.services.audit_logger import log_event
+from backend.services.auth import AuthenticatedUser, get_current_user
 from backend.services.batch_store import batch_store
 from backend.services.csv_generator import CsvGenerator
 from backend.services.pdf_renamer import PdfRenamer
 from backend.services.s3_storage import s3_storage
 from backend.services.store import store
 
-router = APIRouter(prefix="/api")
+# ルーター全体に認証を要求する（個別エンドポイントでの記述を省略できる）
+router = APIRouter(prefix="/api", dependencies=[Depends(get_current_user)])
 
 logger = logging.getLogger(__name__)
 
@@ -219,11 +223,25 @@ async def confirm_document(file_id: str, request: ConfirmRequest):
 
 
 @router.get("/result/{file_id}/csv")
-async def download_csv(file_id: str):
+async def download_csv(
+    file_id: str,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """CSV生成・ダウンロード"""
     document = store.get(file_id)
     if not document:
         raise HTTPException(status_code=404, detail="結果が見つかりません")
+
+    # 監査ログ: 結果ダウンロード
+    log_event(
+        AuditEventType.RESULT_DOWNLOAD,
+        request=request,
+        user_email=current_user.email,
+        user_groups=current_user.groups,
+        target_file=document.original_filename or file_id,
+        detail="download=csv",
+    )
 
     csv_bytes = _csv_generator.generate(document)
     filename = _csv_generator.generate_filename(document)
@@ -255,7 +273,11 @@ async def preview_pdf(file_id: str):
 
 
 @router.get("/result/{file_id}/pdf")
-async def download_pdf(file_id: str):
+async def download_pdf(
+    file_id: str,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """リネーム済みPDFダウンロード"""
     document = store.get(file_id)
     if not document:
@@ -264,6 +286,16 @@ async def download_pdf(file_id: str):
     pdf_bytes = store.get_pdf(file_id)
     if not pdf_bytes:
         raise HTTPException(status_code=404, detail="PDFファイルが見つかりません")
+
+    # 監査ログ: 結果ダウンロード
+    log_event(
+        AuditEventType.RESULT_DOWNLOAD,
+        request=request,
+        user_email=current_user.email,
+        user_groups=current_user.groups,
+        target_file=document.original_filename or file_id,
+        detail="download=pdf",
+    )
 
     _, filename = _pdf_renamer.rename(pdf_bytes, document)
     encoded_filename = urllib.parse.quote(filename)

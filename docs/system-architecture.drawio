@@ -1,0 +1,346 @@
+<mxfile host="app.diagrams.net" agent="Kiro" version="24.0.0">
+  <diagram id="ocr-architecture" name="現行構成 (EC2 / Docker Compose)">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1150" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- User -->
+        <mxCell id="user" value="👤 ユーザー&#10;(ブラウザ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="500" width="140" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Route53 -->
+        <mxCell id="route53" value="AWS Route 53&#10;(DNS / Aレコード)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="505" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Let's Encrypt -->
+        <mxCell id="letsencrypt" value="Let's Encrypt&#10;(SSL証明書)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="640" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- AWS Cloud boundary -->
+        <mxCell id="awscloud" value="AWS Cloud (ap-northeast-1)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=14;fontStyle=1;fillColor=none;strokeColor=#232F3E;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="40" width="1240" height="1070" as="geometry" />
+        </mxCell>
+
+        <!-- VPC boundary -->
+        <mxCell id="vpc" value="デフォルト VPC / Public Subnet" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=13;fontStyle=1;fillColor=none;strokeColor=#7B61FF;" vertex="1" parent="1">
+          <mxGeometry x="440" y="80" width="760" height="1010" as="geometry" />
+        </mxCell>
+
+        <!-- Elastic IP -->
+        <mxCell id="eip" value="Elastic IP&#10;(固定パブリックIP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="460" y="120" width="150" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Security Group boundary -->
+        <mxCell id="sg" value="Security Group (ocr-app-sg)　IN: 22(マイIP) / 80 / 443　·　OUT: all" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=12;fontStyle=1;fillColor=none;strokeColor=#B85450;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="190" width="720" height="880" as="geometry" />
+        </mxCell>
+
+        <!-- EC2 boundary -->
+        <mxCell id="ec2" value="AWS EC2 (Ubuntu / t3.medium)　IAMロール: Bedrock + S3" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=13;fontStyle=1;fillColor=none;strokeColor=#D86613;" vertex="1" parent="1">
+          <mxGeometry x="480" y="230" width="680" height="820" as="geometry" />
+        </mxCell>
+
+        <!-- Docker Compose boundary -->
+        <mxCell id="compose" value="Docker Compose" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=12;fontStyle=1;fillColor=none;strokeColor=#2496ED;" vertex="1" parent="1">
+          <mxGeometry x="500" y="270" width="640" height="760" as="geometry" />
+        </mxCell>
+
+        <!-- Nginx -->
+        <mxCell id="nginx" value="Nginx&#10;Reverse Proxy / SSL終端&#10;レート制限 / Gzip / セキュリティヘッダー" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="520" y="310" width="600" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- frontend -->
+        <mxCell id="fe" value="frontend コンテナ&#10;Next.js (Standalone)&#10;React / TypeScript / Tailwind :3000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="520" y="410" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- backend boundary -->
+        <mxCell id="be" value="backend コンテナ — FastAPI / uvicorn :8000" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=12;fontStyle=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="520" y="530" width="600" height="480" as="geometry" />
+        </mxCell>
+
+        <mxCell id="auth" value="認証モジュール&#10;Cognito JWT検証 / BFF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="540" y="570" width="250" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="pipeline" value="OCR Pipeline&#10;PyMuPDF → OpenCV → Claude" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="840" y="570" width="250" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="validator" value="Validator&#10;全銀マスター照合" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="540" y="660" width="250" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="outgen" value="CSV / PDFリネーム生成" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="840" y="660" width="250" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="audit" value="Audit Logger&#10;(JSON Lines / 監査ログ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="540" y="750" width="250" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="logs" value="app-logs ボリューム&#10;監査ログ永続化" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="840" y="745" width="130" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- External AWS services -->
+        <mxCell id="cognito" value="AWS Cognito User Pool&#10;+ App Client&#10;(Hosted UI / JWT発行)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1350" y="250" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="bedrock" value="AWS Bedrock&#10;Claude Sonnet 4&#10;(画像OCR)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="450" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="AWS S3&#10;cheiru-ocr-storage&#10;(入力/出力/アーカイブ)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="630" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- External non-AWS -->
+        <mxCell id="zengin" value="全銀協 Zengin Code API&#10;(金融機関マスター)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="830" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="user" target="route53">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1l" value="HTTPS / ドメイン" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="180" y="478" width="90" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="route53" target="eip">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2l" value="名前解決 → EIP" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="378" y="330" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e2b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="eip" target="nginx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2bl" value="443 / 80" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="612" y="200" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="letsencrypt" target="nginx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3l" value="証明書発行/更新" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="620" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="nginx" target="fe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4l" value="/" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="580" y="385" width="40" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="nginx" target="be">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5l" value="/api/" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="920" y="500" width="50" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="auth" target="cognito">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6l" value="OIDC / JWKS / トークン交換" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="450" width="150" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="pipeline" target="bedrock">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7l" value="画像OCR (InvokeModel)" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="560" width="130" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="validator" target="zengin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8l" value="マスター照合" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="740" width="90" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="outgen" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9l" value="入力/出力/アーカイブ保存" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="655" width="150" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="audit" target="logs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="ocr-architecture-future" name="将来推奨構成 (Private Subnet + ALB + ECS Fargate)">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- User -->
+        <mxCell id="f_user" value="👤 ユーザー&#10;(ブラウザ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="540" width="140" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="f_route53" value="AWS Route 53&#10;(DNS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="220" y="545" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f_waf" value="AWS WAF&#10;(L7防御 / 任意)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="220" y="650" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f_acm" value="AWS ACM&#10;(マネージドSSL証明書)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="215" y="440" width="140" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- AWS Cloud boundary -->
+        <mxCell id="f_awscloud" value="AWS Cloud (ap-northeast-1)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=14;fontStyle=1;fillColor=none;strokeColor=#232F3E;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="40" width="1260" height="1120" as="geometry" />
+        </mxCell>
+
+        <!-- VPC boundary -->
+        <mxCell id="f_vpc" value="VPC (10.0.0.0/16)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=13;fontStyle=1;fillColor=none;strokeColor=#7B61FF;" vertex="1" parent="1">
+          <mxGeometry x="420" y="80" width="820" height="1050" as="geometry" />
+        </mxCell>
+
+        <!-- Public Subnet -->
+        <mxCell id="f_pub" value="Public Subnet (マルチAZ: ap-northeast-1a / 1c)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=12;fontStyle=1;fillColor=#F2FBEA;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="440" y="120" width="780" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="f_alb" value="Application Load Balancer&#10;(HTTPS終端 / パスルーティング / ヘルスチェック)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="460" y="160" width="480" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="f_nat" value="NAT Gateway&#10;(外部API向け送信)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="990" y="160" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Private Subnet -->
+        <mxCell id="f_priv" value="Private Subnet (マルチAZ: ap-northeast-1a / 1c)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=12;fontStyle=1;fillColor=#FDF3F3;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="440" y="330" width="780" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="f_ecs" value="ECS Fargate Cluster (サーバーレス / OS管理不要 / オートスケール)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=12;fontStyle=1;fillColor=none;strokeColor=#2496ED;" vertex="1" parent="1">
+          <mxGeometry x="460" y="370" width="740" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="f_taskfe" value="Fargate Task: frontend&#10;Next.js :3000&#10;(複数タスク / マルチAZ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="490" y="420" width="300" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="f_taskbe" value="Fargate Task: backend&#10;FastAPI :8000&#10;(複数タスク / マルチAZ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="860" y="420" width="300" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- VPC Endpoints -->
+        <mxCell id="f_endpoints" value="VPC Endpoints" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=12;fontStyle=1;fillColor=none;strokeColor=#7B61FF;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="640" width="780" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="f_vpceS3" value="S3 Gateway Endpoint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="690" width="300" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f_vpceBR" value="Bedrock / ECR / Logs&#10;Interface Endpoint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="860" y="690" width="300" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Managed services inside cloud, outside VPC -->
+        <mxCell id="f_cognito" value="AWS Cognito User Pool&#10;+ App Client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="150" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="f_secrets" value="Secrets Manager&#10;(Cognito Secret 等)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="250" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f_bedrock" value="AWS Bedrock&#10;Claude Sonnet 4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="440" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f_ecr" value="AWS ECR&#10;(コンテナイメージ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="530" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f_s3" value="AWS S3&#10;cheiru-ocr-storage" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="630" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="f_cw" value="CloudWatch Logs&#10;(監査 / アプリログ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="730" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- External non-AWS -->
+        <mxCell id="f_zengin" value="全銀協 Zengin Code API&#10;(金融機関マスター)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="850" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="f_e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_user" target="f_route53">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e1l" value="HTTPS" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="180" y="518" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_route53" target="f_waf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_waf" target="f_alb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e3l" value="443" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="640" width="40" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="f_acm" target="f_alb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e4l" value="証明書" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="420" width="50" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_alb" target="f_taskfe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e5l" value="/ → frontend" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="385" width="90" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_alb" target="f_taskbe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e6l" value="/api/ → backend" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="930" y="385" width="110" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_taskbe" target="f_cognito">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e7l" value="OIDC / JWKS" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="300" width="90" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_taskbe" target="f_vpceBR">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e8l" value="画像OCR" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="610" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="f_vpceBR" target="f_bedrock">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_taskbe" target="f_vpceS3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e10l" value="入出力保存" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="700" y="610" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="f_vpceS3" target="f_s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_taskbe" target="f_secrets">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e12l" value="Secret取得" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1185" y="330" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="f_vpceBR" target="f_cw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="f_vpceBR" target="f_ecr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_taskbe" target="f_nat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e15l" value="外部API送信" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="330" width="90" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_nat" target="f_zengin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f_e16l" value="マスター取得" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="500" width="90" height="20" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

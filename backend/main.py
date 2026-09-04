@@ -37,11 +37,22 @@ app = FastAPI(
 )
 
 
-# === CORS設定（開発環境: 全オリジン許可） ===
+# === CORS設定 ===
+# BFF方式ではブラウザ→Nginx→(同一オリジンの)/api というプロキシ経由になるため、
+# 本番では ALLOWED_ORIGINS を明示し、Cookie送信を許可する。
+# allow_credentials=True の場合、ワイルドカード "*" は使用できない点に注意。
+import os as _os
+
+_allowed_origins_env = _os.environ.get("ALLOWED_ORIGINS", "")
+if _allowed_origins_env:
+    _allowed_origins = [o.strip() for o in _allowed_origins_env.split(",") if o.strip()]
+else:
+    # 開発時のデフォルト（Next.js dev）
+    _allowed_origins = ["http://localhost:3000"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,6 +83,13 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
 
 
 # === ルーター登録 ===
+
+try:
+    from backend.routers.auth import router as auth_router
+    app.include_router(auth_router)
+    logger.info("auth router 登録成功")
+except Exception as e:
+    logger.error(f"auth router 登録失敗: {e}", exc_info=True)
 
 try:
     from backend.routers.upload import router as upload_router

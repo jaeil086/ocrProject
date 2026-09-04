@@ -11,6 +11,67 @@ import type {
 
 const API_BASE = '/api';
 
+// ============================================================
+// 認証（BFF方式）
+// ============================================================
+
+/** ログイン中ユーザー情報 */
+export interface SessionUser {
+  email: string | null;
+  username: string | null;
+  groups: string[];
+  is_admin: boolean;
+}
+
+/**
+ * 認証付きfetchラッパー
+ * - httpOnly Cookie を送信するため credentials: 'include' を常に付与する。
+ * - 401（未認証/期限切れ）を受けたらログイン画面へ遷移する。
+ */
+async function authFetch(input: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, { ...init, credentials: 'include' });
+  if (res.status === 401) {
+    // セッション切れ: ログイン開始エンドポイントへ遷移
+    if (typeof window !== 'undefined') {
+      window.location.href = '/api/auth/login';
+    }
+    throw new Error('認証セッションが切れました。ログイン画面に移動します。');
+  }
+  return res;
+}
+
+/**
+ * ログイン中ユーザー情報を取得する
+ * 未認証の場合は null を返す。
+ */
+export async function getSession(): Promise<SessionUser | null> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, { credentials: 'include' });
+    if (res.status === 401) return null;
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ログアウトする
+ * バックエンドでCookieを破棄し、Cognitoのログアウトへ遷移する。
+ */
+export async function logout(): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    const data = await res.json().catch(() => ({}));
+    window.location.href = data.logout_url || '/';
+  } catch {
+    window.location.href = '/';
+  }
+}
+
 /**
  * PDFファイルアップロード + 自動OCR処理
  * 複数ファイル対応
@@ -24,7 +85,7 @@ export async function uploadFiles(files: File[]): Promise<UploadResponse> {
   const timeout = setTimeout(() => controller.abort(), 300000);
 
   try {
-    const res = await fetch(`${API_BASE}/upload`, {
+    const res = await authFetch(`${API_BASE}/upload`, {
       method: 'POST',
       body: formData,
       signal: controller.signal,
@@ -41,7 +102,7 @@ export async function uploadFiles(files: File[]): Promise<UploadResponse> {
  * OCR処理結果取得
  */
 export async function getResult(fileId: string): Promise<OcrDocument> {
-  const res = await fetch(`${API_BASE}/result/${fileId}`);
+  const res = await authFetch(`${API_BASE}/result/${fileId}`);
 
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -55,7 +116,7 @@ export async function updateField(
   fieldName: string,
   correctedValue: string
 ): Promise<OcrField> {
-  const res = await fetch(`${API_BASE}/result/${fileId}/fields`, {
+  const res = await authFetch(`${API_BASE}/result/${fileId}/fields`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ field_name: fieldName, corrected_value: correctedValue }),
@@ -73,7 +134,7 @@ export async function updateFieldCheckStatus(
   fieldName: string,
   checkStatus: 'ok' | 'ng' | 'needs_review'
 ): Promise<OcrField> {
-  const res = await fetch(`${API_BASE}/result/${fileId}/fields`, {
+  const res = await authFetch(`${API_BASE}/result/${fileId}/fields`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ field_name: fieldName, check_status: checkStatus }),
@@ -92,7 +153,7 @@ export async function updateVisualCheck(
   isChecked: boolean,
   checkedBy: string
 ): Promise<VisualCheck> {
-  const res = await fetch(`${API_BASE}/result/${fileId}/visual-checks`, {
+  const res = await authFetch(`${API_BASE}/result/${fileId}/visual-checks`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -113,7 +174,7 @@ export async function confirmDocument(
   fileId: string,
   confirmedBy: string
 ): Promise<OcrDocument> {
-  const res = await fetch(`${API_BASE}/result/${fileId}/confirm`, {
+  const res = await authFetch(`${API_BASE}/result/${fileId}/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ confirmed_by: confirmedBy }),
@@ -128,7 +189,7 @@ export async function confirmDocument(
  * Shift_JISエンコードされたCSVファイルをダウンロード
  */
 export async function downloadCsv(fileId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/result/${fileId}/csv`);
+  const res = await authFetch(`${API_BASE}/result/${fileId}/csv`);
 
   if (!res.ok) throw new Error(await res.text());
 
@@ -147,7 +208,7 @@ export async function downloadCsv(fileId: string): Promise<void> {
  * リネーム済みPDFダウンロード
  */
 export async function downloadPdf(fileId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/result/${fileId}/pdf`);
+  const res = await authFetch(`${API_BASE}/result/${fileId}/pdf`);
 
   if (!res.ok) throw new Error(await res.text());
 
@@ -172,7 +233,7 @@ export async function batchUpload(files: File[]): Promise<BatchUploadResponse> {
   const formData = new FormData();
   files.forEach(file => formData.append('files', file));
 
-  const res = await fetch(`${API_BASE}/batch/upload`, {
+  const res = await authFetch(`${API_BASE}/batch/upload`, {
     method: 'POST',
     body: formData,
   });
@@ -185,7 +246,7 @@ export async function batchUpload(files: File[]): Promise<BatchUploadResponse> {
  * バッチ処理状況取得（ポーリング用）
  */
 export async function getBatchStatus(batchId: string): Promise<BatchStatusResponse> {
-  const res = await fetch(`${API_BASE}/batch/${batchId}/status`);
+  const res = await authFetch(`${API_BASE}/batch/${batchId}/status`);
 
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -198,7 +259,7 @@ export async function reprocessFile(
   batchId: string,
   fileId: string
 ): Promise<{ message: string; file_id: string; batch_id: string }> {
-  const res = await fetch(`${API_BASE}/batch/${batchId}/files/${fileId}/reprocess`, {
+  const res = await authFetch(`${API_BASE}/batch/${batchId}/files/${fileId}/reprocess`, {
     method: 'POST',
   });
 
@@ -210,7 +271,7 @@ export async function reprocessFile(
  * バッチ全体結果Excelダウンロード（チェック項目色分け付き）
  */
 export async function downloadBatchCsv(batchId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/batch/${batchId}/download/csv`);
+  const res = await authFetch(`${API_BASE}/batch/${batchId}/download/csv`);
 
   if (!res.ok) throw new Error(await res.text());
 
@@ -242,7 +303,7 @@ export async function downloadBatchCsv(batchId: string): Promise<void> {
  * バッチ全原本PDFのZIPダウンロード
  */
 export async function downloadBatchZip(batchId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/batch/${batchId}/download/zip`);
+  const res = await authFetch(`${API_BASE}/batch/${batchId}/download/zip`);
 
   if (!res.ok) throw new Error(await res.text());
 
