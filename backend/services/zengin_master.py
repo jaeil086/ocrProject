@@ -1,35 +1,29 @@
 """
 全銀金融機関マスターサービス
 
-Zengin Code APIからマスターデータを取得・キャッシュし、
-OCR抽出値との照合（Fuzzy Matching）・交差検証を行う。
+ローカル配置したマスターデータ（エクセル bankmaster.xlsx から生成したJSON）を
+ロードし、OCR抽出値との照合（Fuzzy Matching）・交差検証を行う。
 
 設計方針:
-  - banks.json は FastAPI起動時にロード（起動時ロード）
-  - branches/{bank_code}.json は必要時にロード（Lazy Loading）
-  - ファイルキャッシュ＋メモリキャッシュの2層構造
-  - ダウンロード失敗時はキャッシュファイルをフォールバック使用
+  - マスターの原本はエクセル。build_zengin_master.py で JSON へ変換しておく。
+  - banks.json / branches.json ともに FastAPI起動時にロード（起動時ロード）。
+    支店データは全体でも数MB程度のため、単一ファイルで一括ロードする。
+  - 外部API（zengin-code）へのネットワークアクセスは行わない（セキュリティ要件）。
 """
 
 import json
 import logging
 import re
-import time
 from pathlib import Path
 from typing import Optional
 
-import httpx
 from rapidfuzz import fuzz, process
 
 from backend.config import (
     MASTER_MATCH_OK_THRESHOLD,
     MASTER_MATCH_REVIEW_THRESHOLD,
     ZENGIN_BANKS_CACHE_FILE,
-    ZENGIN_BANKS_URL,
-    ZENGIN_BRANCHES_CACHE_DIR,
-    ZENGIN_BRANCHES_URL_TEMPLATE,
-    ZENGIN_CACHE_DIR,
-    ZENGIN_CACHE_TTL_SECONDS,
+    ZENGIN_BRANCHES_CACHE_FILE,
 )
 from backend.models.schemas import MasterMatchCandidate, MasterMatchInfo
 
@@ -69,7 +63,7 @@ class ZenginMasterService:
     全銀金融機関マスターサービス（シングルトン）
 
     使用パターン:
-        # 起動時
+        # 起動時（ローカルの banks.json をロード）
         await ZenginMasterService.initialize()
 
         # OCRパイプラインから呼び出し
@@ -93,14 +87,16 @@ class ZenginMasterService:
     async def initialize(cls) -> "ZenginMasterService":
         """
         FastAPI起動時に呼び出し。
-        banks.jsonをロードしてシングルトンインスタンスを初期化する。
+        banks.json / branches.json をロードしてシングルトンインスタンスを初期化する。
         """
         instance = cls()
         await instance._load_banks()
+        instance._load_branches()
         instance._initialized = True
         cls._instance = instance
         logger.info(
-            f"ZenginMasterService初期化完了: 銀行数={len(instance._banks)}"
+            f"ZenginMasterService初期化完了: 銀行数={len(instance._banks)}, "
+            f"支店ロード済み銀行数={len(instance._branches_cache)}"
         )
         return instance
 
@@ -423,74 +419,70 @@ class ZenginMasterService:
     async def _load_banks(self) -> None:
         """
         banks.jsonをロード（起動時）。
-        キャッシュが有効ならファイルから、なければAPIからダウンロード。
+        エクセルから生成済みのローカルJSONを読み込む。
+        ファイルが無い場合は build_zengin_master.py の実行が必要。
         """
-        # キャッシュディレクトリ作成
-        ZENGIN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        if not ZENGIN_BANKS_CACHE_FILE.exists():
+            logger.error(
+                f"banks.json が存在しません: {ZENGIN_BANKS_CACHE_FILE} "
+                f"（先に build_zengin_master.py を実行してください）"
+            )
+            return
 
-        # キャッシュファイル有効性チェック
-        if self._is_cache_valid(ZENGIN_BANKS_CACHE_FILE):
-            logger.info("banks.json: キャッシュファイルからロード")
-            data = self._read_cache_file(ZENGIN_BANKS_CACHE_FILE)
-        else:
-            logger.info("banks.json: APIからダウンロード")
-            data = await self._download_json(ZENGIN_BANKS_URL)
-            if data:
-                self._write_cache_file(ZENGIN_BANKS_CACHE_FILE, data)
-            elif ZENGIN_BANKS_CACHE_FILE.exists():
-                # ダウンロード失敗時はキャッシュをフォールバック使用
-                logger.warning("banks.json: ダウンロード失敗、キャッシュファイルをフォールバック使用")
-                data = self._read_cache_file(ZENGIN_BANKS_CACHE_FILE)
+        logger.info(f"banks.json: ローカルファイルからロード ({ZENGIN_BANKS_CACHE_FILE})")
+        data = self._read_json_file(ZENGIN_BANKS_CACHE_FILE)
 
         if not data:
-            logger.error("banks.json: データ取得に完全失敗")
+            logger.error("banks.json: データ読み込みに失敗")
             return
 
         # パースしてメモリに格納
         self._parse_banks_data(data)
 
-    async def _get_branches(self, bank_code: str) -> dict[str, BranchInfo]:
+    def _load_branches(self) -> None:
         """
-        支店データをLazy Loadingで取得。
-        メモリキャッシュ → ファイルキャッシュ → APIダウンロードの順で試行。
+        branches.jsonをロード（起動時）。
+        銀行コードで入れ子になった全支店データを一括でメモリに展開する。
+          branches.json: {bank_code: {branch_code: {...}}}
         """
-        # メモリキャッシュ確認
-        if bank_code in self._branches_cache:
-            return self._branches_cache[bank_code]
+        if not ZENGIN_BRANCHES_CACHE_FILE.exists():
+            logger.error(
+                f"branches.json が存在しません: {ZENGIN_BRANCHES_CACHE_FILE} "
+                f"（先に build_zengin_master.py を実行してください）"
+            )
+            return
 
-        # ファイルキャッシュ確認
-        ZENGIN_BRANCHES_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cache_file = ZENGIN_BRANCHES_CACHE_DIR / f"{bank_code}.json"
-
-        if self._is_cache_valid(cache_file):
-            logger.debug(f"branches/{bank_code}.json: ファイルキャッシュからロード")
-            data = self._read_cache_file(cache_file)
-        else:
-            logger.info(f"branches/{bank_code}.json: APIからダウンロード")
-            url = ZENGIN_BRANCHES_URL_TEMPLATE.format(bank_code=bank_code)
-            data = await self._download_json(url)
-            if data:
-                self._write_cache_file(cache_file, data)
-            elif cache_file.exists():
-                logger.warning(
-                    f"branches/{bank_code}.json: ダウンロード失敗、キャッシュをフォールバック使用"
-                )
-                data = self._read_cache_file(cache_file)
+        logger.info(
+            f"branches.json: ローカルファイルからロード ({ZENGIN_BRANCHES_CACHE_FILE})"
+        )
+        data = self._read_json_file(ZENGIN_BRANCHES_CACHE_FILE)
 
         if not data:
-            logger.warning(f"branches/{bank_code}.json: データ取得失敗")
-            return {}
+            logger.error("branches.json: データ読み込みに失敗")
+            return
 
-        # パースしてメモリキャッシュに格納
-        branches = self._parse_branches_data(data)
-        self._branches_cache[bank_code] = branches
-        logger.debug(
-            f"branches/{bank_code}.json: ロード完了 支店数={len(branches)}"
+        total = 0
+        for bank_code, branch_map in data.items():
+            branches = self._parse_branches_data(branch_map)
+            self._branches_cache[bank_code] = branches
+            total += len(branches)
+
+        logger.info(
+            f"branches.json: ロード完了 銀行数={len(self._branches_cache)}, "
+            f"支店総数={total}"
         )
-        return branches
+
+    async def _get_branches(self, bank_code: str) -> dict[str, BranchInfo]:
+        """
+        支店データを取得する。
+        起動時に branches.json を全展開済みのため、メモリキャッシュから引くだけ。
+
+        ※ 呼び出し側の互換性維持のため async シグネチャを保持している。
+        """
+        return self._branches_cache.get(bank_code, {})
 
     def _parse_banks_data(self, data: dict) -> None:
-        """banks.json APIレスポンスをパースしてメモリに格納"""
+        """banks.jsonデータをパースしてメモリに格納"""
         for code, info in data.items():
             bank = BankInfo(
                 code=code,
@@ -505,7 +497,7 @@ class ZenginMasterService:
                 self._bank_name_index[bank.name] = code
 
     def _parse_branches_data(self, data: dict) -> dict[str, BranchInfo]:
-        """branches/{code}.json APIレスポンスをパース"""
+        """1銀行分の支店データ（{branch_code: {...}}）をパース"""
         branches: dict[str, BranchInfo] = {}
         for code, info in data.items():
             branch = BranchInfo(
@@ -518,41 +510,13 @@ class ZenginMasterService:
             branches[code] = branch
         return branches
 
-    # === キャッシュユーティリティ ===
+    # === ファイル読み込みユーティリティ ===
 
-    def _is_cache_valid(self, cache_file: Path) -> bool:
-        """キャッシュファイルが有効（存在＆TTL以内）か判定"""
-        if not cache_file.exists():
-            return False
-        age = time.time() - cache_file.stat().st_mtime
-        return age < ZENGIN_CACHE_TTL_SECONDS
-
-    def _read_cache_file(self, cache_file: Path) -> Optional[dict]:
-        """キャッシュファイルを読み込み"""
+    def _read_json_file(self, json_file: Path) -> Optional[dict]:
+        """ローカルJSONファイルを読み込み"""
         try:
-            with open(cache_file, "r", encoding="utf-8") as f:
+            with open(json_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError) as e:
-            logger.error(f"キャッシュファイル読み込み失敗: {cache_file} - {e}")
-            return None
-
-    def _write_cache_file(self, cache_file: Path, data: dict) -> None:
-        """キャッシュファイルに書き込み"""
-        try:
-            cache_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False)
-            logger.debug(f"キャッシュファイル書き込み完了: {cache_file}")
-        except OSError as e:
-            logger.error(f"キャッシュファイル書き込み失敗: {cache_file} - {e}")
-
-    async def _download_json(self, url: str) -> Optional[dict]:
-        """URLからJSONをダウンロード"""
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url)
-                response.raise_for_status()
-                return response.json()
-        except (httpx.HTTPError, json.JSONDecodeError) as e:
-            logger.error(f"JSONダウンロード失敗: {url} - {e}")
+            logger.error(f"JSONファイル読み込み失敗: {json_file} - {e}")
             return None

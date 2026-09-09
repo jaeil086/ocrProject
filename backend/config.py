@@ -42,17 +42,29 @@ CLAUDE_MAX_TOKENS: int = int(os.environ.get("CLAUDE_MAX_TOKENS", "1024"))
 
 
 # === 金融機関マスター設定 ===
-# Zengin Code API URL
-ZENGIN_BANKS_URL: str = "https://zengin-code.github.io/api/banks.json"
-ZENGIN_BRANCHES_URL_TEMPLATE: str = "https://zengin-code.github.io/api/branches/{bank_code}.json"
+# マスターの原本はエクセル（bankmaster.xlsx）をローカル配置して使用する。
+# セキュリティ上の理由から外部API（zengin-code）へのアクセスは行わない。
+#
+# データフロー:
+#   bankmaster.xlsx  --(build_zengin_master.py)-->  banks.json / branches/*.json
+#   起動時に banks.json をロード、支店は必要時に branches/{code}.json をLazy Load。
 
-# マスターデータキャッシュパス
+# エクセル原本パス（タカノ部長より受領したマスター）
+ZENGIN_MASTER_SOURCE_DIR = DATA_DIR / "master_source"
+ZENGIN_MASTER_SOURCE_FILE = Path(
+    os.environ.get(
+        "ZENGIN_MASTER_SOURCE_FILE",
+        str(ZENGIN_MASTER_SOURCE_DIR / "bankmaster.xlsx"),
+    )
+)
+
+# 変換済みマスターデータの配置パス（エクセルから生成されるJSON）
+# 銀行・支店ともに単一ファイルで管理する（Git管理・可搬性のため）。
+#   banks.json    : {bank_code: {code, name, kana, hira, roma}}
+#   branches.json : {bank_code: {branch_code: {code, name, kana, hira, roma}}}
 ZENGIN_CACHE_DIR = DATA_DIR / "zengin_cache"
 ZENGIN_BANKS_CACHE_FILE = ZENGIN_CACHE_DIR / "banks.json"
-ZENGIN_BRANCHES_CACHE_DIR = ZENGIN_CACHE_DIR / "branches"
-
-# キャッシュ有効期限（秒）: 24時間
-ZENGIN_CACHE_TTL_SECONDS: int = 86400
+ZENGIN_BRANCHES_CACHE_FILE = ZENGIN_CACHE_DIR / "branches.json"
 
 # Fuzzy Matching 閾値
 MASTER_MATCH_OK_THRESHOLD: float = 95.0       # 95%以上 → OK（自動確定）

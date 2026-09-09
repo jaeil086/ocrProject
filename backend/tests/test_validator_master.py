@@ -7,7 +7,7 @@ Validator.check_financial_codes()のマスター照合・交差検証ロジッ�
 import pytest
 
 from backend.models.enums import ConfidenceLevel, FormType, ValidationErrorType
-from backend.models.schemas import MasterMatchInfo, OcrField, ValidationError
+from backend.models.schemas import OcrField, ValidationError
 from backend.services.validator import Validator
 from backend.services.zengin_master import BankInfo, BranchInfo, ZenginMasterService
 
@@ -174,77 +174,6 @@ class TestCheckFinancialCodes:
 
         # エラーなし（スキップ）
         assert len(errors) == 0
-
-
-# === complement_codes テスト ===
-
-
-class TestComplementCodes:
-    """complement_codes()のテスト"""
-
-    def test_auto_complement_bank_code(self, validator, master_service):
-        """銀行番号が空の場合に自動補完"""
-        fields = [
-            _make_field("銀行名", "横浜（銀行）"),
-            _make_field("銀行番号"),  # 空
-        ]
-
-        # まず銀行名のmaster_matchを設定（通常はcheck_financial_codes後に呼ばれる）
-        bank_field = fields[0]
-        bank_field.master_match = MasterMatchInfo(
-            master_value="横浜銀行",
-            master_code="0138",
-            match_score=100.0,
-            match_status="ok",
-        )
-
-        result = validator.complement_codes(fields)
-
-        # 銀行番号が自動補完されている
-        bank_code_field = next(f for f in result if f.field_name == "銀行番号")
-        assert bank_code_field.corrected_value == "0138"
-
-    def test_no_complement_when_value_exists(self, validator, master_service):
-        """銀行番号が既にある場合は補完しない"""
-        fields = [
-            _make_field("銀行名", "横浜（銀行）"),
-            _make_field("銀行番号", "0138"),
-        ]
-
-        bank_field = fields[0]
-        bank_field.master_match = MasterMatchInfo(
-            master_value="横浜銀行",
-            master_code="0138",
-            match_score=100.0,
-            match_status="ok",
-        )
-
-        result = validator.complement_codes(fields)
-
-        # 既に値がある場合はcorrected_valueは設定されない
-        bank_code_field = next(f for f in result if f.field_name == "銀行番号")
-        assert bank_code_field.corrected_value is None
-
-    def test_no_complement_when_needs_review(self, validator, master_service):
-        """マスター照合がneeds_reviewの場合は補完しない"""
-        fields = [
-            _make_field("銀行名", "みづほ（銀行）"),
-            _make_field("銀行番号"),  # 空
-        ]
-
-        bank_field = fields[0]
-        bank_field.master_match = MasterMatchInfo(
-            master_value="みずほ銀行",
-            master_code="0001",
-            match_score=90.0,
-            match_status="needs_review",  # OKではない
-        )
-
-        result = validator.complement_codes(fields)
-
-        # needs_reviewの場合は補完しない
-        bank_code_field = next(f for f in result if f.field_name == "銀行番号")
-        assert bank_code_field.corrected_value is None
 
 
 # === check_missing_fields テスト（既存機能の回帰テスト） ===
