@@ -38,5 +38,7 @@ nginx/ssl/
 # Backup Files
 backups/
 
-# Deploy Logs
-logs/
+# Deploy Logs (リポジトリ直下の logs/ のみを対象にする。
+# 単に "logs/" と書くと app/admin/logs/ のようなソースコード配下のフォルダまで
+# 無視されてしまうため、先頭に / を付けてルート限定にする)
+/logs/
