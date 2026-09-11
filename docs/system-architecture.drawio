@@ -10,14 +10,14 @@
           <mxGeometry x="40" y="500" width="140" height="70" as="geometry" />
         </mxCell>
 
+        <!-- Cato Networks (HTTPS/TLS終端) -->
+        <mxCell id="cato" value="Cato Networks&#10;SASE / SSE ゲートウェイ&#10;(HTTPS/TLS終端)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="150" height="70" as="geometry" />
+        </mxCell>
+
         <!-- Route53 -->
         <mxCell id="route53" value="AWS Route 53&#10;(DNS / Aレコード)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="230" y="505" width="140" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- Let's Encrypt -->
-        <mxCell id="letsencrypt" value="Let's Encrypt&#10;(SSL証明書)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="230" y="640" width="140" height="60" as="geometry" />
         </mxCell>
 
         <!-- AWS Cloud boundary -->
@@ -36,7 +36,7 @@
         </mxCell>
 
         <!-- Security Group boundary -->
-        <mxCell id="sg" value="Security Group (ocr-app-sg)　IN: 22(マイIP) / 80 / 443　·　OUT: all" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=12;fontStyle=1;fillColor=none;strokeColor=#B85450;dashed=1;" vertex="1" parent="1">
+        <mxCell id="sg" value="Security Group (ocr-app-sg)　IN: 22(マイIP) / 80　·　OUT: all" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontSize=12;fontStyle=1;fillColor=none;strokeColor=#B85450;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="460" y="190" width="720" height="880" as="geometry" />
         </mxCell>
 
@@ -51,7 +51,7 @@
         </mxCell>
 
         <!-- Nginx -->
-        <mxCell id="nginx" value="Nginx&#10;Reverse Proxy / SSL終端&#10;レート制限 / Gzip / セキュリティヘッダー" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="nginx" value="Nginx&#10;Reverse Proxy (HTTP:80)&#10;レート制限 / Gzip / セキュリティヘッダー" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="520" y="310" width="600" height="60" as="geometry" />
         </mxCell>
 
@@ -71,7 +71,7 @@
         <mxCell id="pipeline" value="OCR Pipeline&#10;PyMuPDF → OpenCV → Claude" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="840" y="570" width="250" height="55" as="geometry" />
         </mxCell>
-        <mxCell id="validator" value="Validator&#10;全銀マスター照合" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="validator" value="Validator&#10;金融機関マスター照合" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="540" y="660" width="250" height="55" as="geometry" />
         </mxCell>
         <mxCell id="outgen" value="CSV / PDFリネーム生成" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
@@ -95,35 +95,35 @@
           <mxGeometry x="1370" y="630" width="160" height="80" as="geometry" />
         </mxCell>
 
-        <!-- External non-AWS -->
-        <mxCell id="zengin" value="全銀協 Zengin Code API&#10;(金融機関マスター)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1360" y="830" width="180" height="70" as="geometry" />
+        <!-- 金融機関マスター (ローカルJSON / backendコンテナ内) -->
+        <mxCell id="master" value="金融機関マスター&#10;banks.json / branches.json&#10;(bankmaster.xlsx 由来 / 起動時ロード)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="540" y="840" width="250" height="80" as="geometry" />
         </mxCell>
 
         <!-- Edges -->
-        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="user" target="route53">
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="user" target="cato">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e1l" value="HTTPS / ドメイン" style="text;html=1;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="180" y="478" width="90" height="20" as="geometry" />
+          <mxGeometry x="30" y="600" width="110" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="route53" target="eip">
+        <mxCell id="e1b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="cato" target="route53">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2l" value="名前解決 → EIP" style="text;html=1;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="378" y="330" width="100" height="20" as="geometry" />
+        <mxCell id="e1bl" value="名前解決 (DNS)" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="190" y="600" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="cato" target="eip">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2l" value="HTTPS終端後 HTTP(80)で転送 → EIP" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="200" y="655" width="220" height="20" as="geometry" />
         </mxCell>
         <mxCell id="e2b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="eip" target="nginx">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2bl" value="443 / 80" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="e2bl" value="80" style="text;html=1;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="612" y="200" width="60" height="20" as="geometry" />
-        </mxCell>
-        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="letsencrypt" target="nginx">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e3l" value="証明書発行/更新" style="text;html=1;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="380" y="620" width="100" height="20" as="geometry" />
         </mxCell>
         <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="nginx" target="fe">
           <mxGeometry relative="1" as="geometry" />
@@ -149,11 +149,11 @@
         <mxCell id="e7l" value="画像OCR (InvokeModel)" style="text;html=1;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="1150" y="560" width="130" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="validator" target="zengin">
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="validator" target="master">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e8l" value="マスター照合" style="text;html=1;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1150" y="740" width="90" height="20" as="geometry" />
+        <mxCell id="e8l" value="ローカル照合" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="800" y="775" width="90" height="20" as="geometry" />
         </mxCell>
         <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="outgen" target="s3">
           <mxGeometry relative="1" as="geometry" />
@@ -204,7 +204,7 @@
         <mxCell id="f_alb" value="Application Load Balancer&#10;(HTTPS終端 / パスルーティング / ヘルスチェック)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="460" y="160" width="480" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="f_nat" value="NAT Gateway&#10;(外部API向け送信)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="f_nat" value="NAT Gateway&#10;(一般アウトバウンド / 任意)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="990" y="160" width="200" height="70" as="geometry" />
         </mxCell>
 
@@ -218,7 +218,7 @@
         <mxCell id="f_taskfe" value="Fargate Task: frontend&#10;Next.js :3000&#10;(複数タスク / マルチAZ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="490" y="420" width="300" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="f_taskbe" value="Fargate Task: backend&#10;FastAPI :8000&#10;(複数タスク / マルチAZ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="f_taskbe" value="Fargate Task: backend&#10;FastAPI :8000&#10;(複数タスク / マルチAZ)&#10;金融機関マスター(JSON)を同梱・起動時ロード" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="860" y="420" width="300" height="120" as="geometry" />
         </mxCell>
 
@@ -253,9 +253,9 @@
           <mxGeometry x="1290" y="730" width="200" height="60" as="geometry" />
         </mxCell>
 
-        <!-- External non-AWS -->
-        <mxCell id="f_zengin" value="全銀協 Zengin Code API&#10;(金融機関マスター)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1290" y="850" width="200" height="70" as="geometry" />
+        <!-- 金融機関マスター (ローカル同梱の注記) -->
+        <mxCell id="f_master_note" value="金融機関マスター (banks.json / branches.json) は&#10;コンテナイメージに同梱するローカルデータ。&#10;起動時にメモリへロードし、照合のための外部通信は発生しない。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=11;align=left;verticalAlign=middle;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="840" width="240" height="90" as="geometry" />
         </mxCell>
 
         <!-- Edges -->
@@ -328,17 +328,11 @@
         <mxCell id="f_e14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="f_vpceBR" target="f_ecr">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="f_e15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_taskbe" target="f_nat">
+        <mxCell id="f_e15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="f_taskbe" target="f_nat">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="f_e15l" value="外部API送信" style="text;html=1;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1050" y="330" width="90" height="20" as="geometry" />
-        </mxCell>
-        <mxCell id="f_e16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="f_nat" target="f_zengin">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f_e16l" value="マスター取得" style="text;html=1;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1200" y="500" width="90" height="20" as="geometry" />
+        <mxCell id="f_e15l" value="一般アウトバウンド&#10;(OS更新等 / 任意)" style="text;html=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="320" width="140" height="30" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

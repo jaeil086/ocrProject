@@ -1,193 +1,202 @@
 <mxfile host="app.diagrams.net" agent="Kiro" version="24.0.0">
   <diagram id="ocr-aws-icons" name="OCR現行構成 (AWS公式アイコン)">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1500" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <!-- ============ ユーザー (クラウド外) ============ -->
-        <mxCell id="user" value="ユーザー (ブラウザ)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.user;" vertex="1" parent="1">
-          <mxGeometry x="80" y="620" width="60" height="60" as="geometry" />
+        <!-- ================= 外部 (AWS外) ================= -->
+
+        <!-- User -->
+        <mxCell id="user" value="ユーザー&#10;(ブラウザ)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.user;" vertex="1" parent="1">
+          <mxGeometry x="80" y="620" width="70" height="70" as="geometry" />
         </mxCell>
 
-        <!-- Zengin API (クラウド外 下) -->
-        <mxCell id="zengin" value="全銀協 Zengin Code API&#10;(金融機関マスター)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=11;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="1060" width="180" height="60" as="geometry" />
+        <!-- Cato Networks (HTTPS終端) -->
+        <mxCell id="cato" value="Cato Networks&#10;(会社のネットワーク保護ゲートウェイ)&#10;ここでHTTPS(暗号化通信)を受け、&#10;サーバへはHTTPで渡す" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDF3F3;strokeColor=#B85450;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="250" y="600" width="230" height="110" as="geometry" />
         </mxCell>
 
-        <!-- 通信種別の凡例 -->
-        <mxCell id="legend" value="【線の凡例】&#10;──── 実線 : VPC内部の通信&#10;- - - - 点線 : インターネット経由の通信&#10;　(EC2 → Internet Gateway → Bedrock / S3 / Cognito / Zengin)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;" vertex="1" parent="1">
-          <mxGeometry x="40" y="380" width="400" height="120" as="geometry" />
+        <!-- ================= AWS Cloud 境界 ================= -->
+        <mxCell id="awscloud" value="AWS Cloud" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=14;fontStyle=1;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud_alt;strokeColor=#232F3E;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="560" y="40" width="1960" height="1320" as="geometry" />
         </mxCell>
 
-        <!-- 認証フロー凡例 -->
-        <mxCell id="authnote" value="【ログイン(認証)の流れ】&#10;① 未ログインで画面にアクセスすると、frontendのmiddlewareが&#10;   backendの /api/auth/login へ誘導&#10;② backendがCognito Hosted UIのログイン画面へリダイレクト&#10;   → ユーザーがID/PWを入力&#10;③ Cognitoが認可コードを付けて /api/auth/callback へ戻す&#10;④ backendがコードをトークンに交換し、IDトークンを&#10;   httpOnly Cookieに保存（以降のAPIはこのCookieで認証）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7E6;strokeColor=#D6B656;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;" vertex="1" parent="1">
-          <mxGeometry x="40" y="760" width="400" height="190" as="geometry" />
+        <!-- Route 53 (VPC外・左上) -->
+        <mxCell id="route53" value="Route 53&#10;(DNS / ドメイン名前解決)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.route_53;" vertex="1" parent="1">
+          <mxGeometry x="620" y="120" width="60" height="60" as="geometry" />
         </mxCell>
 
-        <!-- 将来対応メモ -->
-        <mxCell id="futurenote" value="※ 今後の対応予定&#10;・EC2をPrivate Subnetへ移設&#10;・外部AWSサービスへの通信はVPCエンドポイント等で&#10;　インターネットを経由しない構成へ変更予定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F2FF;strokeColor=#6C8EBF;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="1180" width="400" height="110" as="geometry" />
+        <!-- Region 境界 -->
+        <mxCell id="region" value="Region: ap-northeast-1 (東京)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=13;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#147EBA;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="240" width="1320" height="1080" as="geometry" />
         </mxCell>
 
-        <!-- ============ AWS Cloud 境界 ============ -->
-        <mxCell id="awscloud" value="AWS Cloud" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=13;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud_alt;strokeColor=#232F3E;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;dashed=0;" vertex="1" parent="1">
-          <mxGeometry x="500" y="60" width="1640" height="1280" as="geometry" />
+        <!-- VPC 境界 -->
+        <mxCell id="vpc" value="VPC (デフォルト)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=13;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;strokeColor=#8C4FFF;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#8C4FFF;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="640" y="310" width="1020" height="960" as="geometry" />
         </mxCell>
 
-        <!-- ============ 外部マネージドサービス (Cloud直下, VPC外, 右端に縦分散) ============ -->
-        <mxCell id="cognito" value="Cognito User Pool / App Client&#10;(Hosted UI / JWT)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cognito;" vertex="1" parent="1">
-          <mxGeometry x="1990" y="220" width="60" height="60" as="geometry" />
+        <!-- Public Subnet 境界 -->
+        <mxCell id="subnet" value="Public Subnet" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=13;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;strokeColor=#7AA116;fillColor=#F2F9EC;verticalAlign=top;align=left;spacingLeft=30;fontColor=#248814;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="680" y="380" width="940" height="860" as="geometry" />
         </mxCell>
 
-        <mxCell id="bedrock" value="Amazon Bedrock&#10;Claude Sonnet 4 (画像OCR)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#01A88D;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;" vertex="1" parent="1">
-          <mxGeometry x="1990" y="620" width="60" height="60" as="geometry" />
+        <!-- Elastic IP -->
+        <mxCell id="eip" value="Elastic IP&#10;(固定パブリックIP)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_ip_address2;" vertex="1" parent="1">
+          <mxGeometry x="720" y="430" width="60" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="s3" value="Amazon S3 (cheiru-ocr-storage)&#10;入力 / 出力 / アーカイブ" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#7AA116;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
-          <mxGeometry x="1990" y="1000" width="60" height="60" as="geometry" />
+        <!-- Security Group 境界 -->
+        <mxCell id="sg" value="Security Group (ocr-app-sg)  IN: 80 / 管理用SSH 22(マイIP)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;strokeColor=#DD3522;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#DD3522;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="520" width="900" height="700" as="geometry" />
         </mxCell>
 
-        <!-- Route 53 (Cloud直下, VPC外, 左上) -->
-        <mxCell id="route53" value="Route 53 (DNS)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.route_53;" vertex="1" parent="1">
-          <mxGeometry x="560" y="150" width="60" height="60" as="geometry" />
+        <!-- EC2 インスタンス 境界 -->
+        <mxCell id="ec2" value="EC2 (t3.medium / Ubuntu 22.04)" style="sketch=0;points=[];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=1;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;strokeColor=#D86613;fillColor=#FBE5D6;verticalAlign=top;align=left;spacingLeft=34;spacingTop=6;fontColor=#232F3E;" vertex="1" parent="1">
+          <mxGeometry x="720" y="560" width="860" height="640" as="geometry" />
         </mxCell>
 
-        <!-- ACM (Cloud直下, VPC外, Route53の右) -->
-        <mxCell id="acm" value="ACM (SSL証明書)&#10;ALBに提供" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.certificate_manager;" vertex="1" parent="1">
-          <mxGeometry x="760" y="150" width="60" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- ============ Region 境界 ============ -->
-        <mxCell id="region" value="Region: ap-northeast-1 (東京)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#147EBA;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="520" y="260" width="1120" height="1040" as="geometry" />
-        </mxCell>
-
-        <!-- ============ VPC 境界 ============ -->
-        <mxCell id="vpc" value="VPC (デフォルト)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;strokeColor=#8C4FFF;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#AAB7B8;dashed=0;" vertex="1" parent="1">
-          <mxGeometry x="560" y="320" width="1000" height="940" as="geometry" />
-        </mxCell>
-
-        <!-- IAM Role (VPC外, EC2の左側に配置してEC2と近接) -->
-        <mxCell id="iam" value="IAM Role (ocr-app-ec2-role)&#10;Bedrock + S3 権限" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management_iam_role;" vertex="1" parent="1">
-          <mxGeometry x="600" y="700" width="60" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- ============ Public Subnet ============ -->
-        <mxCell id="subnet" value="Public Subnet" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;strokeColor=#7AA116;fillColor=#E9F3E6;verticalAlign=top;align=left;spacingLeft=30;fontColor=#248814;dashed=0;" vertex="1" parent="1">
-          <mxGeometry x="720" y="380" width="800" height="840" as="geometry" />
-        </mxCell>
-
-        <!-- Application Load Balancer (Public Subnet内, EC2の上) — ラベルは下 -->
-        <mxCell id="alb" value="Application Load Balancer&#10;HTTPS(443)受信 → SSL終端 → EC2へHTTP(80)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;" vertex="1" parent="1">
-          <mxGeometry x="760" y="420" width="60" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- Internet Gateway (EC2と外部サービスの間, ラベルは下) -->
-        <mxCell id="igw" value="Internet Gateway&#10;(外向き通信はインターネット経由)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.internet_gateway;" vertex="1" parent="1">
-          <mxGeometry x="1760" y="630" width="60" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- ============ Security Group ============ -->
-        <mxCell id="sg" value="Security Group (ocr-app-sg)  IN: ALBから 80 / 管理用 22" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=11;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;strokeColor=#DD3522;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#DD3522;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="740" y="540" width="720" height="660" as="geometry" />
-        </mxCell>
-
-        <!-- ============ EC2 インスタンス ============ -->
-        <mxCell id="ec2" value="EC2 (t3.medium / Ubuntu 22.04)" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ec2;strokeColor=#D86613;fillColor=#F58534;verticalAlign=top;align=center;fontColor=#232F3E;labelPosition=center;verticalLabelPosition=top;spacingTop=6;" vertex="1" parent="1">
-          <mxGeometry x="770" y="580" width="640" height="600" as="geometry" />
-        </mxCell>
-
-        <!-- Docker Compose 境界 -->
-        <mxCell id="compose" value="Docker Compose" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=8;fontSize=11;fontStyle=1;fillColor=none;strokeColor=#2496ED;dashed=1;fontColor=#2496ED;" vertex="1" parent="1">
-          <mxGeometry x="800" y="630" width="580" height="530" as="geometry" />
+        <!-- Docker Compose 境界 (EC2の中) -->
+        <mxCell id="compose" value="Docker Compose (コンテナ群)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontSize=12;fontStyle=1;fillColor=none;strokeColor=#2496ED;dashed=1;fontColor=#2496ED;" vertex="1" parent="1">
+          <mxGeometry x="745" y="620" width="810" height="550" as="geometry" />
         </mxCell>
 
         <!-- Nginx コンテナ -->
-        <mxCell id="nginx" value="Nginx コンテナ (:80 / HTTP)&#10;リバースプロキシ (SSLはALBで終端済み)&#10;レート制限 (api 30r/s・upload 5r/s) / Gzip / セキュリティヘッダー&#10;振り分け: [ /api/ → backend ] / [ その他 → frontend ]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="820" y="660" width="540" height="70" as="geometry" />
+        <mxCell id="nginx" value="Nginx コンテナ (リバースプロキシ / :80)&#10;レート制限 / Gzip / セキュリティヘッダー&#10;振り分け: /api/ → backend ・ その他 → frontend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="775" y="660" width="750" height="70" as="geometry" />
         </mxCell>
 
         <!-- frontend コンテナ -->
-        <mxCell id="fe" value="frontend コンテナ&#10;Next.js (Standalone) :3000&#10;React / TS / Tailwind&#10;middleware.ts: 未ログイン時 /api/auth/login へ誘導" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="820" y="760" width="250" height="80" as="geometry" />
+        <mxCell id="fe" value="frontend コンテナ&#10;Next.js (Standalone) :3000&#10;React / TypeScript / Tailwind&#10;未ログイン時は /api/auth/login へ誘導" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="775" y="770" width="290" height="90" as="geometry" />
         </mxCell>
 
-        <!-- backend コンテナ -->
-        <mxCell id="be" value="backend コンテナ — FastAPI / uvicorn :8000" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=8;fontSize=11;fontStyle=1;fillColor=#FFF2CC;strokeColor=#D6B656;" vertex="1" parent="1">
-          <mxGeometry x="820" y="870" width="540" height="270" as="geometry" />
-        </mxCell>
-        <mxCell id="auth" value="auth ルーター (/api/auth/*)&#10;Authorization Code + PKCE (BFF)&#10;IDトークンをhttpOnly Cookieに保存" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="840" y="905" width="230" height="55" as="geometry" />
-        </mxCell>
-        <mxCell id="pipeline" value="OCR Pipeline (/api/upload)&#10;PyMuPDF → OpenCV → Claude" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1110" y="905" width="230" height="55" as="geometry" />
-        </mxCell>
-        <mxCell id="validator" value="Validator&#10;全銀マスター照合" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="840" y="975" width="230" height="55" as="geometry" />
-        </mxCell>
-        <mxCell id="outgen" value="CSV / PDFリネーム生成" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1110" y="975" width="230" height="55" as="geometry" />
-        </mxCell>
-        <mxCell id="audit" value="Audit Logger&#10;(JSON Lines / 監査ログ → app-logsボリューム)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="840" y="1060" width="500" height="55" as="geometry" />
+        <!-- backend コンテナ (境界) -->
+        <mxCell id="be" value="backend コンテナ — FastAPI / uvicorn :8000" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontSize=11;fontStyle=1;fillColor=#FFF2CC;strokeColor=#D6B656;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="770" width="405" height="380" as="geometry" />
         </mxCell>
 
-        <!-- ============ エッジ (接続線) ============ -->
-        <mxCell id="edge_user_r53" value="HTTPS / ドメイン" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="user" target="route53">
+        <!-- backend: auth -->
+        <mxCell id="auth" value="① 認証 (auth ルーター)&#10;Cognito ログイン / Authorization Code + PKCE&#10;IDトークンを httpOnly Cookie に保存 (BFF)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="810" width="365" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- backend: pipeline -->
+        <mxCell id="pipeline" value="② OCRパイプライン (/api/upload)&#10;PDF分割(PyMuPDF) → 画像前処理(OpenCV)&#10;→ Claudeで画像から16項目を抽出" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="875" width="365" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- backend: validator -->
+        <mxCell id="validator" value="③ 検証 (Validator)&#10;桁数補正(銀行4桁/店3桁・ゆうちょ記号5桁/番号8桁)&#10;金融機関マスター照合・交差検証 / 記入漏れチェック" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="945" width="365" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- backend: output -->
+        <mxCell id="outgen" value="④ 出力生成&#10;CSV / Excel (Shift_JIS) 生成 ・ PDFリネーム&#10;バッチ処理 (複数PDF一括 / 同時3件)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="1015" width="365" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- backend: audit -->
+        <mxCell id="audit" value="⑤ 監査ログ (Audit Logger)&#10;ログイン/アップロード/OCR実行等を JSON Lines で記録" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6B656;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="1080" width="365" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- 金融機関マスター (frontend下・ローカル) -->
+        <mxCell id="master" value="金融機関マスター (ローカルJSON)&#10;banks.json / branches.json&#10;原本: bankmaster.xlsx&#10;起動時にメモリロード・外部通信なし" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="785" y="1000" width="290" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ================= 外部マネージドサービス (右端・縦) ================= -->
+        <mxCell id="cognito" value="Amazon Cognito&#10;(ログイン認証 / JWT発行・検証)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cognito;" vertex="1" parent="1">
+          <mxGeometry x="2320" y="340" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bedrock" value="Amazon Bedrock&#10;Claude Sonnet 4&#10;(画像OCR + 構造化抽出)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#01A88D;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;" vertex="1" parent="1">
+          <mxGeometry x="2320" y="640" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s3" value="Amazon S3&#10;(入力PDF / 出力Excel / アーカイブZIP)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#7AA116;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="2320" y="940" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Internet Gateway (VPCの外向き出口 / Region内・VPC外) -->
+        <mxCell id="igw" value="Internet Gateway&#10;(VPCの外向き出口)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.internet_gateway;" vertex="1" parent="1">
+          <mxGeometry x="1730" y="640" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- IAM Role (EC2に付与する権限バッジ / Region内・VPC外) -->
+        <mxCell id="iam" value="IAM Role (ocr-app-ec2-role)&#10;Bedrock + S3 権限を付与&#10;(AWSキーをサーバに置かない)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management_iam_role;" vertex="1" parent="1">
+          <mxGeometry x="1730" y="380" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ================= 凡例 (右下・1つだけ) ================= -->
+        <mxCell id="legend" value="【凡例】&#10;──── 実線 : ユーザー要求の主な流れ (画面表示 / API)&#10;- - - - 点線 : backendが外部AWSサービスを呼び出す通信&#10;※ 金融機関マスターはサーバ内ローカルのため外部通信なし" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#999999;fontSize=11;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="2060" y="1120" width="460" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- ================= エッジ (接続線) ================= -->
+
+        <!-- User → Cato (HTTPS) -->
+        <mxCell id="e_user_cato" value="HTTPS (暗号化)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="user" target="cato">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge_r53_alb" value="名前解決 → ALB (HTTPS/443)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="route53" target="alb">
+
+        <!-- Cato → Route53 (DNS, 点線) -->
+        <mxCell id="e_cato_r53" value="DNS解決" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;fontSize=11;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="cato" target="route53">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge_alb_nginx" value="SSL終端後 HTTP(80)で転送" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.1;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="alb" target="nginx">
+
+        <!-- Cato → EIP (HTTP転送) -->
+        <mxCell id="e_cato_eip" value="HTTPS終端後 HTTP(80)で転送" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="cato" target="eip">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge_acm_alb" value="SSL証明書を提供" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.9;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="acm" target="alb">
+
+        <!-- EIP → Nginx -->
+        <mxCell id="e_eip_nginx" value="HTTP(80)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="eip" target="nginx">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge_nginx_fe" value="画面表示 (/ など /api以外)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="nginx" target="fe">
+
+        <!-- Nginx → frontend -->
+        <mxCell id="e_nginx_fe" value="画面表示 (/ など)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="nginx" target="fe">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge_nginx_be" value="API (/api/ で始まるパス)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="nginx" target="be">
+
+        <!-- Nginx → backend -->
+        <mxCell id="e_nginx_be" value="API (/api/)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="nginx" target="be">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <!-- IAM Role → EC2 (短い実線, キー不要のロール付与) -->
-        <mxCell id="edge_iam_ec2" value="ロール付与 (キー不要)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;" edge="1" parent="1" source="iam" target="ec2">
+
+        <!-- backend(validator) → master -->
+        <mxCell id="e_be_master" value="ローカル照合" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="validator" target="master">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <!-- EC2 → Internet Gateway (実線: VPC内) -->
-        <mxCell id="edge_ec2_igw" value="外部AWSサービスへの通信" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ec2" target="igw">
+
+        <!-- IAM Role → EC2 (権限付与) -->
+        <mxCell id="e_iam_ec2" value="ロール付与 (キー不要)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;fontSize=10;strokeColor=#DD344C;fontColor=#DD344C;" edge="1" parent="1" source="iam" target="ec2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <!-- Internet Gateway → 各外部サービス (点線: インターネット経由) -->
-        <mxCell id="edge_igw_cognito" value="OAuth2 (認可コード+PKCE) / JWT検証(JWKS)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;dashed=1;strokeWidth=2;strokeColor=#B85450;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="igw" target="cognito">
+
+        <!-- backend → Internet Gateway (外向き通信) -->
+        <mxCell id="e_be_igw" value="外部AWSサービスへの通信" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;fontSize=10;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="be" target="igw">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge_igw_bedrock" value="画像OCR (InvokeModel)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;dashed=1;strokeWidth=2;strokeColor=#B85450;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="igw" target="bedrock">
+
+        <!-- Internet Gateway → Cognito (点線) -->
+        <mxCell id="e_igw_cognito" value="ログイン / JWT検証" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;fontSize=10;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="igw" target="cognito">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge_igw_s3" value="入力/出力/アーカイブ保存" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;dashed=1;strokeWidth=2;strokeColor=#B85450;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="igw" target="s3">
+
+        <!-- Internet Gateway → Bedrock (点線) -->
+        <mxCell id="e_igw_bedrock" value="画像OCR (InvokeModel)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="igw" target="bedrock">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <!-- Internet Gateway → Zengin (点線, 上端を回して左のZenginへ) -->
-        <mxCell id="edge_igw_zengin" value="全銀マスター照合" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;fontSize=10;dashed=1;strokeWidth=2;strokeColor=#B85450;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="igw" target="zengin">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="470" y="660" />
-              <mxPoint x="130" y="660" />
-            </Array>
-          </mxGeometry>
+
+        <!-- Internet Gateway → S3 (点線) -->
+        <mxCell id="e_igw_s3" value="入出力保存" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="igw" target="s3">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <!-- ブラウザ ↔ Cognito Hosted UI 直接ログイン画面 (上端を回す) -->
-        <mxCell id="edge_user_cognito" value="② Hosted UIでログイン (ID/PW)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;fontSize=10;strokeColor=#DD344C;fontColor=#DD344C;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="user" target="cognito">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="110" y="30" />
-              <mxPoint x="2020" y="30" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
+
       </root>
     </mxGraphModel>
   </diagram>

@@ -1,12 +1,13 @@
 # OCR口座振替依頼書処理システム — システム構成図
 
-本ドキュメントは、現在構築されているOCR Webアプリケーションの全体システム構成を、実際のソースコード（`docker-compose.yml` / `nginx.conf` / `backend/` 各モジュール）に基づいて記述したものです。
+本ドキュメントは、現在構築されているOCR Webアプリケーションの全体システム構成を、実際のソースコード（`docker-compose.yml` / `nginx/nginx-http-only.conf` / `backend/` 各モジュール）に基づいて記述したものです。
 
 > 注記: ユーザー提示の構成要素に加えて、実装コードから判明した以下の要素を反映しています。
-> - OCRエンジンは **AWS Bedrock (Claude Sonnet 4)** による画像直接OCR（`textract_client.py` は存在するがパイプライン未使用）
+> - OCRエンジンは **AWS Bedrock (Claude Sonnet 4)** による画像直接OCR（Claude Sonnet 単独構成 / Textract 不使用）
 > - **AWS S3**（入力PDF / 出力Excel / アーカイブZIP の保存）
-> - **全銀協 Zengin Code API**（金融機関マスター検証）
+> - 金融機関マスターは **ローカルのエクセル（`bankmaster.xlsx`）を原本** とし、JSON（`banks.json` / `branches.json`）へ変換して利用（外部APIへのアクセスなし）
 > - 認証は Cognito Hosted UI + Authorization Code Flow (PKCE) + **BFF方式（httpOnly Cookie）**
+> - HTTPS（SSL/TLS）は **Cato Networks（SASE/SSE）ゲートウェイで終端**（サーバ証明書の発行者は `Cato-Networks-...`）。EC2上のNginxはHTTP(80)で待ち受ける。ユーザー↔サービス間の通信はHTTPSで暗号化される。
 
 ---
 
@@ -25,10 +26,10 @@
 | **AWS Route 53** | ドメイン名の名前解決（DNS）。独自ドメイン（例: `ai-ocr.ksai-dev.com`）を、EC2に紐づくElastic IPへAレコードでルーティングするManaged DNS。 |
 | **AWS Elastic IP** | EC2インスタンスに関連付ける固定パブリックIP。インスタンス再起動でパブリックIPが変わっても、Route 53のAレコードを変更せずに済むよう、DNSの向き先を固定する。 |
 | **AWS VPC / デフォルトVPC** | EC2が所属する仮想ネットワーク。現行はデフォルトVPCのPublic Subnet上に単一インスタンスを配置し、Elastic IP経由でインターネットに直接公開する構成。 |
-| **AWS Security Group (`ocr-app-sg`)** | EC2のインスタンス単位ファイアウォール（ステートフル）。インバウンドは SSH(22)=マイIPのみ / HTTP(80)=0.0.0.0/0 / HTTPS(443)=0.0.0.0/0 に限定。アウトバウンドは全許可（Bedrock/S3/Zengin/Cognitoへの通信用）。 |
+| **Cato Networks (SASE / SSE ゲートウェイ)** | ユーザーとサービスの間に位置するクラウド型ネットワークセキュリティ基盤。**HTTPS（SSL/TLS）の終端をここで行う**（サーバ証明書の発行者は `Cato-Networks-...`）。ユーザー↔ゲートウェイ間はHTTPSで暗号化され、ゲートウェイからバックエンド（EC2 Nginx）へはHTTPで転送される。SSL証明書はCato側のマネージド運用のため、EC2側でのLet's Encrypt/ACM運用は不要。 |
+| **AWS Security Group (`ocr-app-sg`)** | EC2のインスタンス単位ファイアウォール（ステートフル）。インバウンドは SSH(22)=マイIPのみ / HTTP(80) に限定。HTTPS終端はCatoゲートウェイで行われ、EC2へはHTTP(80)で到達するため、EC2側で443を開放する必要はない。アウトバウンドは全許可（Bedrock/S3/Cognitoへの通信用。金融機関マスターはローカル完結のため外部通信なし）。 |
 | **AWS EC2 (Ubuntu 22.04 / t3.medium)** | アプリケーション実行ホスト。Docker Composeで全コンテナを起動する。BedrockとS3へのアクセスはIAMロール（`ocr-app-ec2-role`）で付与し、インスタンス内にAWSキーを保存しない。 |
-| **Nginx (Reverse Proxy)** | SSL/TLS終端（HTTPS）、HTTP→HTTPSリダイレクト、リバースプロキシ（`/` → frontend、`/api/` → backend）、レート制限（DDoS対策）、Gzip圧縮、アップロードサイズ上限（50MB）、セキュリティヘッダー付与、`X-Forwarded-For` 付与。 |
-| **Let's Encrypt** | SSL証明書の発行・更新。Nginxが `/.well-known/acme-challenge/` でACMEチャレンジに応答。 |
+| **Nginx (Reverse Proxy)** | リバースプロキシ（`/` → frontend、`/api/` → backend）、レート制限（DDoS対策）、Gzip圧縮、アップロードサイズ上限（50MB）、セキュリティヘッダー付与、`X-Forwarded-For` 付与。EC2上ではHTTP(80)で待ち受ける（`nginx-http-only.conf`）。ユーザーから見た通信は前段のCatoゲートウェイによりHTTPS化されている。 |
 
 ### アプリケーション層 (Docker Compose)
 
@@ -48,8 +49,8 @@
 | **result router (`routers/result.py`)** | OCR結果の取得・修正・確認、CSV/リネームPDF生成。 |
 | **OCR Pipeline (`services/ocr_pipeline.py`)** | PDF読込(PyMuPDF) → 画像前処理(OpenCV) → Claude OCR → 結果構築 → 検証 のオーケストレーション。 |
 | **Claude Client (`services/claude_client.py`)** | AWS Bedrock (Claude Sonnet 4) を呼び出し、画像から構造化フィールドを1回のAPIで抽出。 |
-| **Validator (`services/validator.py`)** | 必須項目チェック、銀行/店番号の桁数・入替修正、全銀マスターとの照合。 |
-| **Zengin Master (`services/zengin_master.py`)** | 全銀協 Zengin Code API から金融機関マスターを取得しキャッシュ（`data/zengin_cache`）。 |
+| **Validator (`services/validator.py`)** | 必須項目チェック、銀行/店番号の桁数・入替修正、金融機関マスターとの照合。 |
+| **Zengin Master (`services/zengin_master.py`)** | ローカルの金融機関マスター（`data/zengin_cache/banks.json` / `branches.json`）を起動時にロードし、銀行名・支店名のFuzzy照合と交差検証を行う。原本はエクセル（`bankmaster.xlsx`）で、`scripts/build_zengin_master.py` によりJSONへ変換する。外部APIへのアクセスは行わない。 |
 | **CSV Generator / PDF Renamer** | 確定データからCSV出力、原本PDFの規則的リネーム。 |
 | **S3 Storage (`services/s3_storage.py`)** | 入力PDF(ZIP)・出力Excel・アーカイブZIPをS3バケット `cheiru-ocr-storage` に保存。 |
 | **Audit Logger (`services/audit_logger.py`)** | ログイン/ログアウト、ファイルアップロード、OCR実行等の監査イベントをJSON Lines形式で記録（日次ファイル分割、`app-logs`ボリューム）。 |
@@ -62,134 +63,12 @@
 | **AWS Cognito App Client** | User Poolに紐づくアプリケーション登録単位。OAuth 2.0 / OIDCの `client_id`・`client_secret`、許可するフロー（Authorization Code + PKCE）、コールバックURL（`/api/auth/callback`）、ログアウトURLを保持。バックエンド（FastAPI）はこのApp Clientの資格情報でトークン交換を行う。 |
 | **AWS Bedrock (Claude Sonnet 4)** | OCR + 文書理解エンジン。東京リージョンのInference Profileを利用。 |
 | **AWS S3** | 入力・出力・アーカイブファイルの永続ストレージ。 |
-| **全銀協 Zengin Code API** | 金融機関コード/支店コードのマスターデータ提供（外部・GitHub Pages）。 |
+
+> 金融機関マスターは外部サービスではなく、リポジトリ内のローカルデータ（エクセル由来のJSON）として同梱される。
 
 ---
 
-## 2. Mermaid 形式
-
-### 2.1 システム全体構成図
-
-```mermaid
-flowchart TB
-    User["👤 ユーザー<br/>(ブラウザ)"]
-
-    subgraph AWSCloud["AWS Cloud (ap-northeast-1)"]
-        Route53["AWS Route 53<br/>(DNS / Aレコード)"]
-        Cognito["AWS Cognito User Pool<br/>+ App Client<br/>(Hosted UI / JWT発行)"]
-        Bedrock["AWS Bedrock<br/>Claude Sonnet 4"]
-        S3[("AWS S3<br/>cheiru-ocr-storage")]
-
-        subgraph VPC["デフォルト VPC / Public Subnet"]
-            EIP["Elastic IP<br/>(固定パブリックIP)"]
-
-            subgraph SG["Security Group (ocr-app-sg)<br/>IN: 22(マイIP)/80/443 · OUT: all"]
-                subgraph EC2["AWS EC2 (Ubuntu / t3.medium)<br/>IAMロール: Bedrock + S3"]
-                    subgraph Compose["Docker Compose"]
-                        Nginx["Nginx<br/>Reverse Proxy / SSL終端<br/>レート制限 / Gzip / セキュリティヘッダー"]
-
-                        subgraph FE["frontend コンテナ"]
-                            NextJS["Next.js (Standalone)<br/>React / TS / Tailwind<br/>:3000"]
-                        end
-
-                        subgraph BE["backend コンテナ"]
-                            FastAPI["FastAPI / uvicorn :8000"]
-                            AuthMod["認証 (Cognito JWT検証 / BFF)"]
-                            Pipeline["OCR Pipeline<br/>PyMuPDF→OpenCV→Claude"]
-                            Validator["Validator<br/>(全銀マスター照合)"]
-                            Audit["Audit Logger<br/>(JSON Lines)"]
-                            OutGen["CSV / PDFリネーム生成"]
-                        end
-
-                        Logs[("app-logs ボリューム<br/>監査ログ")]
-                    end
-                end
-            end
-        end
-    end
-
-    LetsEncrypt["Let's Encrypt<br/>(SSL証明書)"]
-    Zengin["全銀協 Zengin Code API<br/>(金融機関マスター)"]
-
-    User -->|"HTTPS / ドメイン名"| Route53
-    Route53 -->|"名前解決 → Elastic IP"| EIP
-    EIP -->|"443/80"| Nginx
-    LetsEncrypt -. "証明書発行/更新" .-> Nginx
-
-    Nginx -->|"/ (画面)"| NextJS
-    Nginx -->|"/api/ (REST)"| FastAPI
-
-    FastAPI --- AuthMod
-    FastAPI --- Pipeline
-    FastAPI --- Validator
-    FastAPI --- Audit
-    FastAPI --- OutGen
-
-    AuthMod -->|"OIDC / JWKS / トークン交換"| Cognito
-    Pipeline -->|"画像OCR (InvokeModel)"| Bedrock
-    Validator -->|"マスター取得"| Zengin
-    OutGen -->|"入力/出力/アーカイブ保存"| S3
-    Audit --> Logs
-```
-
-### 2.2 ログイン〜OCR実行 データフロー（シーケンス図）
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as ユーザー(ブラウザ)
-    participant N as Nginx
-    participant FE as Next.js
-    participant BE as FastAPI(backend)
-    participant CG as AWS Cognito
-    participant BR as AWS Bedrock(Claude)
-    participant ZG as Zengin Code API
-    participant S3 as AWS S3
-    participant AL as Audit Logger
-
-    Note over U,CG: ① ログイン (Authorization Code Flow + PKCE / BFF)
-    U->>N: GET / (HTTPS)
-    N->>BE: GET /api/auth/login
-    BE-->>U: 302 → Cognito Hosted UI (state/PKCE Cookie)
-    U->>CG: ログイン情報入力
-    CG-->>U: 302 → /api/auth/callback?code=...
-    U->>N: GET /api/auth/callback?code=...
-    N->>BE: コールバック転送
-    BE->>CG: 認可コード → トークン交換
-    CG-->>BE: id_token / access_token
-    BE->>BE: JWT検証 (JWKS/iss/aud/exp)
-    BE->>AL: 監査ログ (LOGIN_SUCCESS)
-    BE-->>U: 302 → / + httpOnly Cookie (id_token)
-
-    Note over U,S3: ② OCR実行 (PDFアップロード)
-    U->>N: POST /api/upload (PDF + Cookie)
-    N->>BE: 転送 (X-Forwarded-For 付与)
-    BE->>BE: get_current_user (JWT検証)
-    BE->>AL: 監査ログ (FILE_UPLOAD)
-    BE->>BE: PDF分割 (PyMuPDF)
-
-    loop 各ページ
-        BE->>BE: 画像前処理 (OpenCV)
-        BE->>BR: 画像OCR + フィールド抽出 (InvokeModel)
-        BR-->>BE: 構造化JSON (値 + confidence)
-        BE->>ZG: 金融機関コード照合
-        ZG-->>BE: マスター照合結果
-        BE->>BE: 書類仕分け / 検証エラー付与
-        BE->>AL: 監査ログ (OCR_EXECUTE)
-    end
-
-    BE-->>U: OCR結果 (fields / errors / status)
-
-    Note over U,S3: ③ 確認・確定・出力
-    U->>N: 結果修正・確定 / CSV・ZIPダウンロード
-    N->>BE: /api/result... /api/batch...
-    BE->>S3: 入力PDF / 出力Excel / アーカイブ保存
-    BE-->>U: CSV / リネームPDF / ZIP
-```
-
----
-
-## 3. Draw.io 形式
+## 2. Draw.io 形式
 
 編集可能な作図ファイルを `docs/system-architecture.drawio` に同梱しています。[app.diagrams.net](https://app.diagrams.net/) またはVS Codeの「Draw.io Integration」拡張機能で開いてください。
 
@@ -197,7 +76,7 @@ sequenceDiagram
 
 | ページ名 | 内容 |
 | --- | --- |
-| **現行構成 (EC2 / Docker Compose)** | 第2.1節に対応。Route 53 → Elastic IP → Security Group → EC2上のDocker Composeコンテナ群、および外部AWSサービス（Cognito / Bedrock / S3）とZengin APIとの関係。 |
+| **現行構成 (EC2 / Docker Compose)** | Cato Networks（HTTPS終端）→ Route 53 → Elastic IP → Security Group → EC2上のDocker Composeコンテナ群、および外部AWSサービス（Cognito / Bedrock / S3）との関係。金融機関マスターはコンテナ内のローカルJSONとして保持。 |
 | **将来推奨構成 (Private Subnet + ALB + ECS Fargate)** | 第5節に対応。VPC / マルチAZ / Public・Private Subnet / ALB / ECS Fargate / NAT Gateway / VPCエンドポイントを含むマネージド構成。 |
 
 ---
@@ -212,11 +91,11 @@ sequenceDiagram
 | --- | --- | --- |
 | DNS | Route 53 | ドメイン名の名前解決のみを担い、バックエンドの実IPを直接露出しない。 |
 | 固定IP | Elastic IP | インスタンス再起動でIPが変わらないため、ファイアウォールやDNSの設定を安定運用できる。 |
-| ファイアウォール | Security Group (`ocr-app-sg`) | **SSH(22)は運用者のマイIPのみ許可**し、全世界公開しない。公開ポートはHTTP(80)/HTTPS(443)に限定。ステートフルなので戻り通信は自動許可。 |
-| 暗号化 | Nginx + Let's Encrypt | 全通信をHTTPSで暗号化。HTTP(80)は443へリダイレクトのみ。 |
+| ファイアウォール | Security Group (`ocr-app-sg`) | **SSH(22)は運用者のマイIPのみ許可**し、全世界公開しない。EC2への公開ポートはHTTP(80)に限定。ステートフルなので戻り通信は自動許可。 |
+| 暗号化 | Cato Networks (SASE/SSE) | ユーザー↔ゲートウェイ間のHTTPS/TLSをCatoで終端。SSL証明書はCato側のマネージド運用（発行者 `Cato-Networks-...`）。EC2ではLet's Encrypt/ACMを運用しない。 |
 | レイヤ7 | Nginx | レート制限（DoS緩和）、アップロードサイズ上限（50MB）、セキュリティヘッダー付与、`/api/` と `/` のパスベース振り分け。 |
 
-> **現行構成の弱点**: EC2がPublic Subnet上でElastic IP経由でインターネットに直接公開されており、アプリケーションホストが攻撃対象面（Attack Surface）に晒される。SSHポートも（マイIP限定とはいえ）インスタンスに直接存在する。これらは第5節の将来構成で緩和される。
+> **現行構成の弱点**: EC2がPublic Subnet上でElastic IP経由でインターネットに公開されており、アプリケーションホストが攻撃対象面（Attack Surface）に晒される。SSHポートも（マイIP限定とはいえ）インスタンスに直接存在する。なお、ユーザーとの通信経路自体はCatoゲートウェイによりHTTPSで暗号化されている（EC2〜Nginx間はHTTP）。これらのホスト公開に関する論点は第5節の将来構成で緩和される。
 
 ### 4.2 認証・認可
 
@@ -236,7 +115,6 @@ sequenceDiagram
 ### 4.4 可用性・運用
 
 - `restart: unless-stopped` とヘルスチェックにより、コンテナ異常時は自動再起動。
-- Let's Encrypt証明書はcronで自動更新。
 - **単一障害点（SPOF）**: EC2 1台構成のため、インスタンス障害・AZ障害でサービス全体が停止する。冗長化は第5節の構成で解決される。
 
 ---
@@ -252,79 +130,24 @@ sequenceDiagram
 | 実行基盤 | EC2 + Docker Compose（自己管理） | ECS Fargate（サーバーレス・OS管理不要） |
 | 公開点 | Elastic IP付きEC2を直接公開 | ALBのみ公開。アプリはPrivate Subnetに隔離 |
 | 冗長化 | 単一インスタンス（SPOF） | マルチAZ + タスク複数 + オートスケール |
-| SSL終端 | Nginx + Let's Encrypt（手動更新） | ALB + ACM（自動更新・マネージド証明書） |
+| SSL/TLS終端 | 現行はCato Networks（SASE/SSE）で終端。EC2〜NginxはHTTP | ALB + ACM（AWS内でHTTPS終端・証明書自動更新）に統合する選択肢 |
 | 外部AWSアクセス | NAT不要（Public Subnet） | NAT Gateway + VPCエンドポイント経由 |
 | SSHポート | インスタンスに存在 | 不要（Fargateはホストレス。運用はSSM/ECS Exec） |
 | スケール | 手動（インスタンスタイプ変更） | タスク数の水平スケール |
 
-### 5.2 構成図（Mermaid）
+### 5.2 構成図
 
-```mermaid
-flowchart TB
-    User["👤 ユーザー<br/>(ブラウザ)"]
-    Route53["AWS Route 53<br/>(DNS)"]
-    ACM["AWS ACM<br/>(マネージドSSL証明書)"]
-    WAF["AWS WAF<br/>(L7防御 / 任意)"]
+将来構成の作図は `docs/system-architecture.drawio` の「将来推奨構成」ページを参照。主な要素は Route 53 → (WAF) → ALB（HTTPS終端 / ACM証明書）→ ECS Fargate（frontend / backend、マルチAZ・Private Subnet）で、外部AWSサービス（Bedrock / S3 / ECR / CloudWatch）へは VPC エンドポイント経由でアクセスする。
 
-    subgraph AWSCloud["AWS Cloud (ap-northeast-1)"]
-        Cognito["AWS Cognito User Pool<br/>+ App Client"]
-        Bedrock["AWS Bedrock<br/>Claude Sonnet 4"]
-        ECR["AWS ECR<br/>(コンテナイメージ)"]
-        Secrets["Secrets Manager<br/>(Cognito Secret 等)"]
-
-        subgraph VPC["VPC (10.0.0.0/16)"]
-            subgraph PubAZ["Public Subnet (マルチAZ: ap-northeast-1a / 1c)"]
-                ALB["Application Load Balancer<br/>(HTTPS終端 / ヘルスチェック)"]
-                NAT["NAT Gateway"]
-            end
-
-            subgraph PrivAZ["Private Subnet (マルチAZ: ap-northeast-1a / 1c)"]
-                subgraph ECS["ECS Fargate Cluster"]
-                    TaskFE["Fargate Task: frontend<br/>Next.js :3000"]
-                    TaskBE["Fargate Task: backend<br/>FastAPI :8000"]
-                end
-            end
-
-            subgraph Endpoints["VPC Endpoints"]
-                VpceS3["S3 Gateway Endpoint"]
-                VpceBR["Bedrock / ECR / Logs<br/>Interface Endpoint"]
-            end
-        end
-
-        S3[("AWS S3<br/>cheiru-ocr-storage")]
-        CW["CloudWatch Logs<br/>(監査 / アプリログ)"]
-    end
-
-    Zengin["全銀協 Zengin Code API<br/>(金融機関マスター)"]
-
-    User -->|"HTTPS"| Route53
-    Route53 --> WAF
-    WAF -->|"443"| ALB
-    ACM -. "証明書" .-> ALB
-
-    ALB -->|"/ → frontend"| TaskFE
-    ALB -->|"/api/ → backend"| TaskBE
-
-    TaskBE -->|"OIDC / JWKS"| Cognito
-    TaskBE -->|"画像OCR"| VpceBR
-    VpceBR --> Bedrock
-    TaskBE -->|"入出力保存"| VpceS3
-    VpceS3 --> S3
-    TaskBE -->|"Secret取得"| Secrets
-    TaskBE -->|"ログ出力"| CW
-    ECS -->|"イメージPull"| ECR
-
-    TaskBE -->|"マスター取得 (外部)"| NAT
-    NAT --> Zengin
-```
+> 金融機関マスターはコンテナイメージ内に同梱するローカルJSON（エクセル由来）のため、マスター照合のための外部通信（NAT Gateway経由）は発生しない。
 
 ### 5.3 セキュリティ上の改善点
 
 - **最小攻撃面**: アプリコンテナはPrivate Subnetに置き、インターネットから直接到達不可。公開点はALBのみ。
 - **SSH不要**: Fargateはホストを管理しないためSSHポートが存在しない。運用操作はECS Exec / SSM Session Managerで代替でき、踏み台やキー管理が不要。
-- **マネージドSSL**: ACMがALBの証明書を自動発行・更新。Let's Encryptの手動運用（cron）を廃止。
+- **SSL終端の選択肢**: 現行はCato Networksゲートウェイで HTTPS を終端している。将来AWS内で完結させたい場合は ALB + ACM に終端を移し、証明書を自動発行・更新する構成も選べる（Catoを継続利用する場合はこの限りではない）。
 - **多層防御の追加**: ALB前段にWAFを置くことで、SQLインジェクションや既知の攻撃パターンをL7でブロック可能（任意）。
-- **VPCエンドポイント**: S3/Bedrock/ECR/CloudWatchへの通信をAWS内部ネットワークで完結させ、インターネット経由の通信を減らす。外部通信（Zengin API）のみNAT Gateway経由。
+- **VPCエンドポイント**: S3/Bedrock/ECR/CloudWatchへの通信をAWS内部ネットワークで完結させ、インターネット経由の通信を減らす。金融機関マスターはローカル同梱のため外部通信は不要。NAT Gatewayはパッケージ更新等の一般的なアウトバウンド用途に限定される。
 - **Secrets Manager**: Cognito Client SecretなどをSecrets Managerで一元管理し、`.env` 平文管理から脱却。
 - **可用性**: マルチAZ + 複数タスク + オートスケールにより、AZ障害・負荷急増に耐える。SPOFを解消。
 

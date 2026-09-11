@@ -17,6 +17,7 @@
   いずれも AuditLoggerBase を継承し record() を実装すればよい。
 """
 
+import json
 import logging
 import threading
 from abc import ABC, abstractmethod
@@ -37,6 +38,26 @@ class AuditLoggerBase(ABC):
     @abstractmethod
     def record(self, entry: AuditLog) -> None:
         """監査ログ1件を永続化する"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def query(
+        self,
+        *,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        event_type: Optional[str] = None,
+        user_email: Optional[str] = None,
+        keyword: Optional[str] = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[dict], int]:
+        """監査ログを検索して返す。
+
+        Returns:
+            (該当ログのリスト[新しい順], フィルタ後の総件数)
+        戻り値のログは dict（JSONパース済み）で、新しい順（降順）に並ぶ。
+        """
         raise NotImplementedError
 
 
@@ -70,6 +91,94 @@ class JsonFileAuditLogger(AuditLoggerBase):
         except Exception as e:
             # 監査ログの書き込み失敗が業務処理を止めないよう、ログ出力のみに留める
             logger.error(f"監査ログ書き込み失敗: {e} / entry={line}")
+
+    def _target_files(
+        self, date_from: Optional[str], date_to: Optional[str]
+    ) -> list[Path]:
+        """日付範囲に該当するログファイルを新しい順に返す。
+
+        ファイル名は audit-YYYYMMDD.log。date_from / date_to は "YYYY-MM-DD" 想定。
+        """
+        try:
+            files = sorted(self._log_dir.glob("audit-*.log"))
+        except Exception as e:
+            logger.error(f"監査ログディレクトリの読み取り失敗: {e}")
+            return []
+
+        def _file_date(p: Path) -> str:
+            # "audit-20260909.log" -> "2026-09-09"
+            stem = p.stem  # audit-20260909
+            digits = stem.replace("audit-", "")
+            if len(digits) == 8:
+                return f"{digits[0:4]}-{digits[4:6]}-{digits[6:8]}"
+            return ""
+
+        selected: list[Path] = []
+        for p in files:
+            d = _file_date(p)
+            if not d:
+                continue
+            if date_from and d < date_from:
+                continue
+            if date_to and d > date_to:
+                continue
+            selected.append(p)
+
+        # 新しい日付のファイルを先に処理する（降順）
+        return list(reversed(selected))
+
+    def query(
+        self,
+        *,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        event_type: Optional[str] = None,
+        user_email: Optional[str] = None,
+        keyword: Optional[str] = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[dict], int]:
+        """JSON Linesのログファイルを読み、フィルタ・ソート・ページングして返す。"""
+        files = self._target_files(date_from, date_to)
+
+        matched: list[dict] = []
+        kw = keyword.lower() if keyword else None
+        email_f = user_email.lower() if user_email else None
+
+        with self._lock:
+            for path in files:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                except Exception as e:
+                    logger.error(f"監査ログ読み取り失敗: {path}: {e}")
+                    continue
+
+                # ファイル内も新しい行が下にあるため、逆順で読む（新しい順）
+                for line in reversed(lines):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        # 壊れた行はスキップ
+                        continue
+
+                    if event_type and rec.get("event_type") != event_type:
+                        continue
+                    if email_f:
+                        rec_email = (rec.get("user_email") or "").lower()
+                        if email_f not in rec_email:
+                            continue
+                    if kw and kw not in line.lower():
+                        continue
+
+                    matched.append(rec)
+
+        total = len(matched)
+        page = matched[offset : offset + limit]
+        return page, total
 
 
 def _build_logger() -> AuditLoggerBase:

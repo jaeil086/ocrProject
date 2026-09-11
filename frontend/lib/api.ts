@@ -330,3 +330,73 @@ export async function downloadBatchZip(batchId: string): Promise<void> {
   a.click();
   window.URL.revokeObjectURL(url);
 }
+
+// ============================================================
+// 監査ログ閲覧（管理者限定）
+// ============================================================
+
+/** 監査ログ1件 */
+export interface AuditLogEntry {
+  timestamp: string;
+  event_type: string;
+  result: string;
+  user_email: string | null;
+  user_groups: string[];
+  target_file: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  detail: string | null;
+}
+
+/** 監査ログ検索レスポンス */
+export interface AuditLogResponse {
+  logs: AuditLogEntry[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+/** 監査ログ検索フィルタ */
+export interface AuditLogFilter {
+  dateFrom?: string;     // YYYY-MM-DD
+  dateTo?: string;       // YYYY-MM-DD
+  eventType?: string;
+  userEmail?: string;
+  keyword?: string;
+  offset?: number;
+  limit?: number;
+}
+
+/**
+ * 監査ログを検索して取得する（管理者限定）
+ * 管理者以外は 403 になる。
+ */
+export async function getAuditLogs(
+  filter: AuditLogFilter = {}
+): Promise<AuditLogResponse> {
+  const params = new URLSearchParams();
+  if (filter.dateFrom) params.set('date_from', filter.dateFrom);
+  if (filter.dateTo) params.set('date_to', filter.dateTo);
+  if (filter.eventType) params.set('event_type', filter.eventType);
+  if (filter.userEmail) params.set('user_email', filter.userEmail);
+  if (filter.keyword) params.set('keyword', filter.keyword);
+  params.set('offset', String(filter.offset ?? 0));
+  params.set('limit', String(filter.limit ?? 100));
+
+  const res = await authFetch(`${API_BASE}/audit/logs?${params.toString()}`);
+  if (res.status === 403) {
+    throw new Error('この画面を表示する権限がありません（管理者のみ）');
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/** イベント種別一覧を取得する（管理者限定） */
+export async function getAuditEventTypes(): Promise<
+  { value: string; label: string }[]
+> {
+  const res = await authFetch(`${API_BASE}/audit/event-types`);
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return data.event_types ?? [];
+}

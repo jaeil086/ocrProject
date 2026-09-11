@@ -112,6 +112,13 @@ try:
 except Exception as e:
     logger.error(f"batch router 登録失敗: {e}", exc_info=True)
 
+try:
+    from backend.routers.audit import router as audit_router
+    app.include_router(audit_router)
+    logger.info("audit router 登録成功")
+except Exception as e:
+    logger.error(f"audit router 登録失敗: {e}", exc_info=True)
+
 
 # === 起動時イベント: 金融機関マスター初期化 ===
 
