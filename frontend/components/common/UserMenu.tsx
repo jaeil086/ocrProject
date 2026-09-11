@@ -6,6 +6,7 @@
 // - ログアウトボタンでバックエンドのログアウト処理を呼び出し、Cognitoのログアウトへ遷移する。
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { getSession, logout, type SessionUser } from '@/lib/api';
 
 export default function UserMenu() {
@@ -42,6 +43,14 @@ export default function UserMenu() {
         <p className="text-sm font-medium text-gray-800">{user.email}</p>
         <p className="text-xs text-gray-400">{roleLabel}</p>
       </div>
+      {user.is_admin && (
+        <Link
+          href="/admin/logs"
+          className="text-xs text-blue-700 border border-blue-300 bg-blue-50 rounded px-3 py-1.5 hover:bg-blue-100 transition-colors duration-150"
+        >
+          監査ログ
+        </Link>
+      )}
       <button
         onClick={() => logout()}
         className="text-xs text-gray-600 border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50 transition-colors duration-150"
